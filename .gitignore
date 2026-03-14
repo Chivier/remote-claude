@@ -23,6 +23,9 @@ daemon.log
 *.swp
 *.swo
 
+# mdBook build output
+book/
+
 # OS
 .DS_Store
 Thumbs.db

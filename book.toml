@@ -1,0 +1,16 @@
+[book]
+title = "Remote Claude"
+description = "Remote Claude CLI control via Discord/Telegram bots"
+authors = ["Remote Claude Contributors"]
+language = "en"
+src = "docs/en"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+additional-css = ["theme/lang-selector.css"]
+additional-js  = ["theme/lang-selector.js"]
