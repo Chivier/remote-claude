@@ -694,3 +694,266 @@ class TestCmdInterrupt:
         await bot.cmd_interrupt("discord:100")
         msg = bot.get_last_message()
         assert "not currently processing" in msg
+
+
+# ─── Full Message Flow Tests ───
+
+
+class TestFullMessageFlow:
+    """Test the complete message processing pipeline:
+    handle_input -> resolve session -> ensure_tunnel -> send_message -> stream events -> send response
+    """
+
+    @pytest.mark.asyncio
+    async def test_text_response_flow(self, bot, mock_router, mock_daemon):
+        """User sends text, Claude responds with a text event."""
+        mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
+
+        async def mock_send(*args, **kwargs):
+            yield {"type": "text", "content": "Hello! How can I help?"}
+            yield {"type": "result", "session_id": "sdk-123"}
+
+        mock_daemon.send_message = mock_send
+
+        await bot.handle_input("discord:100", "hi")
+        texts = bot.get_all_message_texts()
+        assert any("Hello! How can I help?" in t for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_streaming_partial_then_text(self, bot, mock_router, mock_daemon):
+        """User sends text, Claude streams partial then sends complete text."""
+        mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
+
+        async def mock_send(*args, **kwargs):
+            yield {"type": "partial", "content": "Hel"}
+            yield {"type": "partial", "content": "lo!"}
+            yield {"type": "text", "content": "Hello!"}
+            yield {"type": "result", "session_id": "sdk-123"}
+
+        mock_daemon.send_message = mock_send
+
+        await bot.handle_input("discord:100", "say hello")
+        # Should have edited the message with final text "Hello!"
+        assert len(bot.edited_messages) > 0 or any("Hello!" in t for _, t in bot.sent_messages)
+
+    @pytest.mark.asyncio
+    async def test_tool_use_then_text(self, bot, mock_router, mock_daemon):
+        """Claude uses a tool then responds with text."""
+        mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
+
+        async def mock_send(*args, **kwargs):
+            yield {"type": "tool_use", "tool": "Read", "message": "Reading file.py"}
+            yield {"type": "text", "content": "Here is the file content."}
+            yield {"type": "result", "session_id": "sdk-123"}
+
+        mock_daemon.send_message = mock_send
+
+        await bot.handle_input("discord:100", "read file.py")
+        texts = bot.get_all_message_texts()
+        assert any("Read" in t for t in texts)
+        assert any("file content" in t for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_error_event(self, bot, mock_router, mock_daemon):
+        """Claude returns an error event."""
+        mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
+
+        async def mock_send(*args, **kwargs):
+            yield {"type": "error", "message": "Something went wrong"}
+
+        mock_daemon.send_message = mock_send
+
+        await bot.handle_input("discord:100", "do something")
+        texts = bot.get_all_message_texts()
+        assert any("Something went wrong" in t for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_queued_event(self, bot, mock_router, mock_daemon):
+        """Claude is busy, message gets queued."""
+        mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
+
+        async def mock_send(*args, **kwargs):
+            yield {"type": "queued", "position": 2}
+
+        mock_daemon.send_message = mock_send
+
+        await bot.handle_input("discord:100", "hello")
+        texts = bot.get_all_message_texts()
+        assert any("queued" in t.lower() or "position" in t.lower() for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_system_init_event(self, bot, mock_router, mock_daemon):
+        """System init event updates SDK session ID."""
+        mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
+
+        async def mock_send(*args, **kwargs):
+            yield {"type": "system", "subtype": "init", "session_id": "sdk-999"}
+            yield {"type": "text", "content": "Initialized."}
+            yield {"type": "result", "session_id": "sdk-999"}
+
+        mock_daemon.send_message = mock_send
+
+        await bot.handle_input("discord:100", "hello")
+        # Verify SDK session ID was updated
+        session = mock_router.resolve("discord:100")
+        assert session.sdk_session_id == "sdk-999"
+
+    @pytest.mark.asyncio
+    async def test_no_session_sends_error(self, bot):
+        """Sending a message without an active session shows error."""
+        await bot.handle_input("discord:100", "hello")
+        texts = bot.get_all_message_texts()
+        assert any("No active session" in t for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_result_event_does_not_produce_message(self, bot, mock_router, mock_daemon):
+        """Result event should not be sent as a visible message."""
+        mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
+
+        async def mock_send(*args, **kwargs):
+            yield {"type": "text", "content": "Done."}
+            yield {"type": "result", "session_id": "sdk-123"}
+
+        mock_daemon.send_message = mock_send
+
+        await bot.handle_input("discord:100", "do it")
+        texts = bot.get_all_message_texts()
+        assert not any("result" in t.lower() and "sdk-123" in t for t in texts)
+        assert any("Done." in t for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_multiple_text_events(self, bot, mock_router, mock_daemon):
+        """Multiple text events produce multiple messages."""
+        mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
+
+        async def mock_send(*args, **kwargs):
+            yield {"type": "text", "content": "First part."}
+            yield {"type": "text", "content": "Second part."}
+            yield {"type": "result", "session_id": "sdk-123"}
+
+        mock_daemon.send_message = mock_send
+
+        await bot.handle_input("discord:100", "explain")
+        texts = bot.get_all_message_texts()
+        assert any("First part." in t for t in texts)
+        assert any("Second part." in t for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_ping_events_ignored(self, bot, mock_router, mock_daemon):
+        """Ping keepalive events should not produce any visible output."""
+        mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
+
+        async def mock_send(*args, **kwargs):
+            yield {"type": "ping"}
+            yield {"type": "ping"}
+            yield {"type": "text", "content": "Response."}
+            yield {"type": "result", "session_id": "sdk-123"}
+
+        mock_daemon.send_message = mock_send
+
+        await bot.handle_input("discord:100", "test")
+        texts = bot.get_all_message_texts()
+        assert not any("ping" in t.lower() for t in texts)
+        assert any("Response." in t for t in texts)
+
+
+# ─── Start with ~ Expansion ───
+
+
+class TestStartTildeExpansion:
+    @pytest.mark.asyncio
+    async def test_tilde_expanded_in_path(self, bot, mock_daemon):
+        """~/Projects should be expanded to /home/user/Projects."""
+        await bot.cmd_start("discord:100", ["gpu-1", "~/Projects/myapp"])
+        # Check what path was passed to create_session
+        call_args = mock_daemon.create_session.call_args
+        if call_args:
+            # The second positional arg is the path
+            actual_path = call_args[0][1]
+            assert not actual_path.startswith("~"), f"Path not expanded: {actual_path}"
+            assert "Projects/myapp" in actual_path
+
+    @pytest.mark.asyncio
+    async def test_absolute_path_unchanged(self, bot, mock_daemon):
+        """Absolute paths should not be modified."""
+        await bot.cmd_start("discord:100", ["gpu-1", "/home/user/project"])
+        call_args = mock_daemon.create_session.call_args
+        if call_args:
+            actual_path = call_args[0][1]
+            assert actual_path == "/home/user/project"
+
+
+# ─── Add Machine from SSH Config ───
+
+
+class TestAddMachineSSH:
+    @pytest.mark.asyncio
+    async def test_add_machine_name_only_not_in_ssh(self, bot):
+        """Adding a machine by name that doesn't exist in SSH config shows error."""
+        await bot.cmd_add_machine("discord:100", ["nonexistent-host-xyz"])
+        texts = bot.get_all_message_texts()
+        assert any("not found in SSH config" in t for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_add_machine_with_host_user(self, bot, mock_config):
+        """Adding machine with explicit host/user should work."""
+        await bot.cmd_add_machine("discord:100", ["test-m", "example.com", "testuser"])
+        texts = bot.get_all_message_texts()
+        assert any("test-m" in t and "added" in t.lower() for t in texts)
+        assert "test-m" in bot.config.machines
+
+    @pytest.mark.asyncio
+    async def test_add_duplicate_machine(self, bot):
+        """Adding a machine that already exists should fail."""
+        await bot.cmd_add_machine("discord:100", ["gpu-1", "x.com", "user"])
+        texts = bot.get_all_message_texts()
+        assert any("already exists" in t for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_remove_machine(self, bot, mock_router):
+        """Removing a machine should work."""
+        await bot.cmd_remove_machine("discord:100", ["gpu-1"])
+        texts = bot.get_all_message_texts()
+        assert any("removed" in t.lower() for t in texts)
+        assert "gpu-1" not in bot.config.machines
+
+    @pytest.mark.asyncio
+    async def test_remove_nonexistent(self, bot):
+        """Removing a machine that doesn't exist should fail."""
+        await bot.cmd_remove_machine("discord:100", ["no-such-machine"])
+        texts = bot.get_all_message_texts()
+        assert any("not found" in t.lower() for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_remove_proxy_dependency(self, bot, mock_config):
+        """Cannot remove a machine used as proxy_jump by another."""
+        mock_config.machines["gpu-2"].proxy_jump = "gpu-1"
+        await bot.cmd_remove_machine("discord:100", ["gpu-1"])
+        texts = bot.get_all_message_texts()
+        assert any("proxy_jump" in t for t in texts)
+
+
+# ─── Restart / Update Admin Check ───
+
+
+class TestAdminCommands:
+    @pytest.mark.asyncio
+    async def test_restart_no_admin(self, bot):
+        """Restart without admin privileges should fail."""
+        await bot.cmd_restart("discord:100", user_id=12345)
+        msg = bot.get_last_message()
+        assert "admin" in msg.lower()
+
+    @pytest.mark.asyncio
+    async def test_update_no_admin(self, bot):
+        """Update without admin privileges should fail."""
+        await bot.cmd_update("discord:100", user_id=12345)
+        msg = bot.get_last_message()
+        assert "admin" in msg.lower()
+
+    @pytest.mark.asyncio
+    async def test_restart_no_user_id(self, bot):
+        """Restart with no user_id should fail."""
+        await bot.cmd_restart("discord:100", user_id=None)
+        msg = bot.get_last_message()
+        assert "admin" in msg.lower()

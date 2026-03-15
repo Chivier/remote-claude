@@ -95,30 +95,6 @@ class DiscordBot(BotBase):
             # Send restart notification if pending
             await self.check_restart_notify()
 
-    async def check_restart_notify(self) -> None:
-        """Override to fetch Discord channel before sending."""
-        from pathlib import Path as _Path
-        restart_file = _Path.cwd() / ".restart_notify"
-        if not restart_file.exists():
-            return
-        try:
-            content = restart_file.read_text().strip().splitlines()
-            restart_file.unlink()
-            if len(content) >= 2:
-                channel_id = content[0]  # e.g. "discord:123456"
-                reason = content[1]
-                # Extract numeric ID and fetch the channel object
-                if channel_id.startswith("discord:"):
-                    discord_id = int(channel_id.split(":", 1)[1])
-                    channel = self.bot.get_channel(discord_id)
-                    if channel is None:
-                        channel = await self.bot.fetch_channel(discord_id)
-                    if channel:
-                        self._channels[channel_id] = channel
-                        await self.send_message(channel_id, f"**{reason} complete.** Head node is back online.")
-        except Exception as e:
-            logger.warning(f"Failed to process restart notify: {e}")
-
         @self.bot.event
         async def on_message(message: discord.Message) -> None:
             # Ignore bot's own messages
@@ -184,6 +160,33 @@ class DiscordBot(BotBase):
         self._channels[channel_id] = interaction.channel
         self._deferred_interactions[channel_id] = interaction
         return channel_id
+
+    async def check_restart_notify(self) -> None:
+        """Check for restart notification file and send message to the channel."""
+        from pathlib import Path as _Path
+        restart_file = _Path.cwd() / ".restart_notify"
+        if not restart_file.exists():
+            return
+        try:
+            content = restart_file.read_text().strip().splitlines()
+            restart_file.unlink()
+            if len(content) >= 2:
+                channel_id = content[0]  # e.g. "discord:123456"
+                reason = content[1]
+                # Extract numeric ID and fetch the channel object
+                if channel_id.startswith("discord:"):
+                    discord_id = int(channel_id.split(":", 1)[1])
+                    channel = self.bot.get_channel(discord_id)
+                    if channel is None:
+                        channel = await self.bot.fetch_channel(discord_id)
+                    if channel:
+                        self._channels[channel_id] = channel
+                        await self.send_message(
+                            channel_id,
+                            f"**{reason} complete.** Head node is back online."
+                        )
+        except Exception as e:
+            logger.warning(f"Failed to process restart notify: {e}")
 
     def _setup_slash_commands(self) -> None:
         """Register Discord slash commands with autocomplete."""
