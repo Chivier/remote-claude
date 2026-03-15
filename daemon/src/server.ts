@@ -1,4 +1,5 @@
 import express, { Request, Response } from "express";
+import { homedir } from "os";
 import { SessionPool } from "./session-pool";
 import { SkillManager } from "./skill-manager";
 import {
@@ -87,13 +88,19 @@ async function handleCreateSession(rpcReq: RpcRequest, res: Response): Promise<v
     return;
   }
 
+  // Expand ~ to home directory
+  let projectPath = params.path;
+  if (projectPath.startsWith("~/") || projectPath === "~") {
+    projectPath = projectPath.replace("~", homedir());
+  }
+
   const mode = (params.mode || "auto") as PermissionMode;
 
   // Sync skills before creating session
-  const skillResult = skillManager.syncToProject(params.path);
+  const skillResult = skillManager.syncToProject(projectPath);
   console.log(`[RPC] Skills synced: ${skillResult.synced.length} files`);
 
-  const sessionId = await sessionPool.create(params.path, mode);
+  const sessionId = await sessionPool.create(projectPath, mode);
 
   res.json(rpcSuccess({ sessionId }, rpcReq.id));
 }

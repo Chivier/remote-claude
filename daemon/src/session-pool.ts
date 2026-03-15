@@ -2,6 +2,7 @@ import { ChildProcess, spawn } from "child_process";
 import { createInterface } from "readline";
 import { v4 as uuidv4 } from "uuid";
 import { existsSync } from "fs";
+import { homedir } from "os";
 import {
   ManagedSession,
   SessionStatus,
@@ -45,6 +46,11 @@ export class SessionPool {
    * No Claude CLI process is spawned until a message is sent.
    */
   async create(path: string, mode: PermissionMode = "auto"): Promise<string> {
+    // Expand ~ to home directory
+    if (path.startsWith("~/") || path === "~") {
+      path = path.replace("~", homedir());
+    }
+
     // Validate path exists
     if (!existsSync(path)) {
       throw new Error(`Path does not exist: ${path}`);

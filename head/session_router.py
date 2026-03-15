@@ -8,7 +8,7 @@ Tracks session lifecycle: active → detached → destroyed.
 import sqlite3
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -141,7 +141,7 @@ class SessionRouter:
         Returns:
             The auto-generated session name.
         """
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         conn = self._connect()
         try:
             # If there's an existing active session on this channel, detach it first
@@ -180,7 +180,7 @@ class SessionRouter:
 
     def update_sdk_session(self, channel_id: str, sdk_session_id: str) -> None:
         """Update the SDK session ID (obtained from Claude result message)."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         conn = self._connect()
         try:
             conn.execute(
@@ -193,7 +193,7 @@ class SessionRouter:
 
     def update_mode(self, channel_id: str, mode: str) -> None:
         """Update the session mode."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         conn = self._connect()
         try:
             conn.execute(
@@ -228,7 +228,7 @@ class SessionRouter:
             return None
 
         session = self._row_to_session(row)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         # Move to session log
         conn.execute(
@@ -262,7 +262,7 @@ class SessionRouter:
                 return None
 
             session = self._row_to_session(row)
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
 
             conn.execute(
                 "UPDATE sessions SET status = 'destroyed', updated_at = ? WHERE channel_id = ?",
@@ -356,7 +356,7 @@ class SessionRouter:
         Returns:
             True if the rename succeeded, False if the name is already taken or no session found.
         """
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         conn = self._connect()
         try:
             # Check if the name is already in use
