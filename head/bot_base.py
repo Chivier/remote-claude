@@ -84,6 +84,21 @@ class BotBase(ABC):
 
     # ─── Admin Check ───
 
+    async def check_restart_notify(self) -> None:
+        """Check for a restart notification file and send a message if found."""
+        restart_file = Path.cwd() / ".restart_notify"
+        if not restart_file.exists():
+            return
+        try:
+            content = restart_file.read_text().strip().splitlines()
+            restart_file.unlink()
+            if len(content) >= 2:
+                channel_id = content[0]
+                reason = content[1]
+                await self.send_message(channel_id, f"**{reason} complete.** Head node is back online.")
+        except Exception as e:
+            logger.warning(f"Failed to process restart notify: {e}")
+
     def is_admin(self, user_id: Optional[int]) -> bool:
         """Check if a user ID is in the admin_users list."""
         if user_id is None:
@@ -897,7 +912,7 @@ class BotBase(ABC):
         await asyncio.sleep(1)
 
         # Perform os.execv to replace this process with a fresh copy
-        self._do_restart()
+        self._do_restart(channel_id, "Restart")
 
     async def cmd_update(self, channel_id: str, user_id: Optional[int] = None) -> None:
         """/update - Git pull and restart (admin only)."""
@@ -941,15 +956,23 @@ class BotBase(ABC):
         logger.info(f"Update requested by user {user_id}: {stdout}")
 
         await asyncio.sleep(1)
-        self._do_restart()
+        self._do_restart(channel_id, "Update")
 
     @staticmethod
-    def _do_restart() -> None:
+    def _do_restart(channel_id: str | None = None, reason: str = "Restart") -> None:
         """Replace this process with a fresh copy via os.execv."""
         from . import main as main_module
         exe = main_module._startup_executable
         config_path = main_module._startup_config_path
         workdir = main_module._startup_workdir
+
+        # Save restart context so the new process can send a notification
+        if channel_id:
+            restart_file = Path(workdir) / ".restart_notify"
+            try:
+                restart_file.write_text(f"{channel_id}\n{reason}\n")
+            except Exception as e:
+                logger.warning(f"Failed to write restart notify file: {e}")
 
         args = [exe, "-m", "head.main", config_path]
         logger.info(f"Restarting: {' '.join(args)} (cwd={workdir})")
