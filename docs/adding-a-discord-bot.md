@@ -1,6 +1,6 @@
 # Adding a Discord Bot
 
-This guide walks you through creating a Discord Application, configuring the bot, and wiring it into Remote Code.
+This guide walks you through creating a Discord Application, configuring the bot, and wiring it into Codecast.
 
 ---
 
@@ -8,7 +8,7 @@ This guide walks you through creating a Discord Application, configuring the bot
 
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) and log in.
 2. Click **New Application** (top-right).
-3. Give it a name (e.g. `Remote Code`) and click **Create**.
+3. Give it a name (e.g. `Codecast`) and click **Create**.
 
 ---
 
@@ -62,7 +62,7 @@ You need the channel ID to restrict the bot to specific channels.
 
 ---
 
-## Step 6: Configure Remote Code
+## Step 6: Configure Codecast
 
 Open `config.yaml` and add (or update) the `bot.discord` section:
 

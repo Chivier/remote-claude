@@ -1,6 +1,6 @@
 # Commands Reference
 
-Complete reference for all bot commands available in Remote Code. All commands work identically in Discord (as slash commands) and Telegram (as text commands with `/` prefix).
+Complete reference for all bot commands available in Codecast. All commands work identically in Discord (as slash commands) and Telegram (as text commands with `/` prefix).
 
 ---
 

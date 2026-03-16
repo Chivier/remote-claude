@@ -1,5 +1,5 @@
 """
-Configuration loader for Remote Code Head Node.
+Configuration loader for Codecast Head Node.
 Reads config.yaml and expands environment variables.
 """
 
@@ -62,9 +62,9 @@ class SkillsConfig:
 
 @dataclass
 class DaemonDeployConfig:
-    install_dir: str = "~/.remote-code/daemon"
+    install_dir: str = "~/.codecast/daemon"
     auto_deploy: bool = True
-    log_file: str = "~/.remote-code/daemon.log"
+    log_file: str = "~/.codecast/daemon.log"
 
 
 DEFAULT_ALLOWED_FILE_TYPES = [
@@ -80,8 +80,8 @@ DEFAULT_ALLOWED_FILE_TYPES = [
 @dataclass
 class FilePoolConfig:
     max_size: int = 1073741824  # 1GB in bytes
-    pool_dir: str = "~/.remote-code/file-pool"
-    remote_dir: str = "/tmp/remote-code/files"
+    pool_dir: str = "~/.codecast/file-pool"
+    remote_dir: str = "/tmp/codecast/files"
     allowed_types: list[str] = field(default_factory=lambda: list(DEFAULT_ALLOWED_FILE_TYPES))
 
 
@@ -98,10 +98,12 @@ class Config:
 
 def expand_env_vars(value: str) -> str:
     """Expand ${ENV_VAR} references in a string."""
+
     def replacer(match: re.Match[str]) -> str:
         var_name = match.group(1)
         return os.environ.get(var_name, match.group(0))
-    return re.sub(r'\$\{(\w+)\}', replacer, value)
+
+    return re.sub(r"\$\{(\w+)\}", replacer, value)
 
 
 def _is_localhost(host: str) -> bool:
@@ -115,6 +117,7 @@ def _is_localhost(host: str) -> bool:
         return True
 
     import socket
+
     # Check hostname
     try:
         if host_lower == socket.gethostname().lower():
@@ -131,9 +134,8 @@ def _is_localhost(host: str) -> bool:
             local_ips.add(info[4][0])
         # Also grab IPs from all interfaces via subprocess (more reliable)
         import subprocess
-        result = subprocess.run(
-            ["hostname", "-I"], capture_output=True, text=True, timeout=5
-        )
+
+        result = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
             for ip in result.stdout.strip().split():
                 local_ips.add(ip.strip())
@@ -233,17 +235,17 @@ def load_config(config_path: str = "config.yaml") -> Config:
     daemon_raw: dict[str, Any] = raw.get("daemon", {})
     if daemon_raw:
         config.daemon = DaemonDeployConfig(
-            install_dir=daemon_raw.get("install_dir", "~/.remote-code/daemon"),
+            install_dir=daemon_raw.get("install_dir", "~/.codecast/daemon"),
             auto_deploy=daemon_raw.get("auto_deploy", True),
-            log_file=daemon_raw.get("log_file", "~/.remote-code/daemon.log"),
+            log_file=daemon_raw.get("log_file", "~/.codecast/daemon.log"),
         )
 
     file_pool_raw: dict[str, Any] = raw.get("file_pool", {})
     if file_pool_raw:
         config.file_pool = FilePoolConfig(
             max_size=file_pool_raw.get("max_size", 1073741824),
-            pool_dir=expand_env_vars(file_pool_raw.get("pool_dir", "~/.remote-code/file-pool")),
-            remote_dir=file_pool_raw.get("remote_dir", "/tmp/remote-code/files"),
+            pool_dir=expand_env_vars(file_pool_raw.get("pool_dir", "~/.codecast/file-pool")),
+            remote_dir=file_pool_raw.get("remote_dir", "/tmp/codecast/files"),
             allowed_types=file_pool_raw.get("allowed_types", list(DEFAULT_ALLOWED_FILE_TYPES)),
         )
 
@@ -255,7 +257,7 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
 def _get_config_path(config: Config) -> Path:
     """Get the config file path. Falls back to 'config.yaml' in project root."""
-    if hasattr(config, '_config_path'):
+    if hasattr(config, "_config_path"):
         return Path(config._config_path)  # type: ignore[attr-defined]
     return Path(__file__).parent.parent / "config.yaml"
 
@@ -332,6 +334,7 @@ def remove_machine_from_config(config: Config, machine_id: str) -> None:
 @dataclass
 class SSHHostEntry:
     """Parsed entry from ~/.ssh/config."""
+
     name: str
     hostname: Optional[str] = None
     user: Optional[str] = None
@@ -396,6 +399,7 @@ def _parse_ssh_config_file(path: Path, visited: set[str]) -> list[SSHHostEntry]:
 
             # Handle glob patterns
             from glob import glob as globfn
+
             for inc_path in sorted(globfn(include_pattern)):
                 entries.extend(_parse_ssh_config_file(Path(inc_path), visited))
             continue
@@ -447,7 +451,5 @@ def format_ssh_hosts_for_display(entries: list[SSHHostEntry]) -> str:
         port_str = f"  port={e.port}" if e.port != 22 else ""
         lines.append(f"{i:3d}. {e.name:<25s} {host_str}{user_str}{proxy_str}{port_str}")
     lines.append("```")
-    lines.append(
-        "\nReply with the **numbers** of hosts to add (e.g., `1 3 5`)."
-    )
+    lines.append("\nReply with the **numbers** of hosts to add (e.g., `1 3 5`).")
     return "\n".join(lines)

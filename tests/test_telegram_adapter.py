@@ -186,9 +186,7 @@ class TestSendMessage:
         adapter = make_adapter()
         msg = make_message(42)
         # First call (HTML) fails, second call (plain) succeeds
-        adapter._bot.send_message = AsyncMock(
-            side_effect=[Exception("parse error"), msg]
-        )
+        adapter._bot.send_message = AsyncMock(side_effect=[Exception("parse error"), msg])
 
         handle = await adapter.send_message("telegram:200", "bad **markdown")
 
@@ -213,9 +211,7 @@ class TestSendMessage:
         msg = make_message(42)
         # RetryAfter takes retry_after as a read-only property set via constructor
         retry_err = RetryAfter(0)
-        adapter._bot.send_message = AsyncMock(
-            side_effect=[retry_err, msg]
-        )
+        adapter._bot.send_message = AsyncMock(side_effect=[retry_err, msg])
 
         handle = await adapter.send_message("telegram:200", "Hello")
         assert handle.message_id == "42"
@@ -290,9 +286,7 @@ class TestEditMessage:
         from telegram.error import BadRequest
 
         adapter = make_adapter()
-        adapter._bot.edit_message_text = AsyncMock(
-            side_effect=BadRequest("Message is not modified")
-        )
+        adapter._bot.edit_message_text = AsyncMock(side_effect=BadRequest("Message is not modified"))
 
         handle = MessageHandle(
             platform="telegram",
@@ -309,9 +303,7 @@ class TestEditMessage:
 
         adapter = make_adapter()
         # First call fails, second (plain text) succeeds
-        adapter._bot.edit_message_text = AsyncMock(
-            side_effect=[BadRequest("can't parse entities"), None]
-        )
+        adapter._bot.edit_message_text = AsyncMock(side_effect=[BadRequest("can't parse entities"), None])
 
         handle = MessageHandle(
             platform="telegram",
@@ -362,9 +354,7 @@ class TestDeleteMessage:
         )
         await adapter.delete_message(handle)
 
-        adapter._bot.delete_message.assert_called_once_with(
-            chat_id=200, message_id=42
-        )
+        adapter._bot.delete_message.assert_called_once_with(chat_id=200, message_id=42)
 
     @pytest.mark.asyncio
     async def test_delete_no_bot_noop(self):
@@ -583,9 +573,7 @@ class TestCommandHandling:
 
         await adapter._handle_telegram_command(update, context)
 
-        handler.assert_called_once_with(
-            "telegram:200", "/add-machine", 100, None
-        )
+        handler.assert_called_once_with("telegram:200", "/add-machine", 100, None)
 
     @pytest.mark.asyncio
     async def test_command_remove_machine_mapped(self):
@@ -598,9 +586,7 @@ class TestCommandHandling:
 
         await adapter._handle_telegram_command(update, context)
 
-        handler.assert_called_once_with(
-            "telegram:200", "/remove-machine", 100, None
-        )
+        handler.assert_called_once_with("telegram:200", "/remove-machine", 100, None)
 
     @pytest.mark.asyncio
     async def test_command_blocked_user_ignored(self):

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Remote Code - One-line installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/Chivier/remote-code/main/scripts/install.sh | bash
+# Codecast - One-line installer
+# Usage: curl -fsSL https://raw.githubusercontent.com/Chivier/codecast/main/scripts/install.sh | bash
 
-REPO="https://github.com/Chivier/remote-code.git"
-INSTALL_DIR="${REMOTE_CODE_DIR:-$HOME/.local/share/remote-code}"
-CONFIG_DIR="$HOME/.remote-code"
+REPO="https://github.com/Chivier/codecast.git"
+INSTALL_DIR="${CODECAST_DIR:-$HOME/.local/share/codecast}"
+CONFIG_DIR="$HOME/.codecast"
 VENV_DIR="$INSTALL_DIR/.venv"
 
 # Colors
@@ -33,6 +33,7 @@ info "Checking prerequisites..."
 
 check_command git "Install git: https://git-scm.com/"
 check_command python3 "Install Python 3.11+: https://www.python.org/"
+check_command cargo "Install Rust: https://rustup.rs/"
 
 # Check Python version >= 3.11
 PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
@@ -54,7 +55,7 @@ else
         warn "$INSTALL_DIR exists and is not empty. Backing up to ${INSTALL_DIR}.bak"
         mv "$INSTALL_DIR" "${INSTALL_DIR}.bak.$(date +%s)"
     fi
-    info "Cloning remote-code to $INSTALL_DIR..."
+    info "Cloning codecast to $INSTALL_DIR..."
     git clone "$REPO" "$INSTALL_DIR"
     ok "Cloned"
 fi
@@ -66,18 +67,11 @@ python3 -m venv "$VENV_DIR"
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
 
-info "Installing remote-code and dependencies..."
+info "Installing codecast and dependencies..."
 pip install -e "$INSTALL_DIR" --quiet
 ok "Installed"
 
-# --- Build Rust daemon (if cargo available) ---
-
-if command -v cargo &>/dev/null; then
-    info "Building Rust daemon..."
-    (cd "$INSTALL_DIR" && cargo build --release --quiet 2>/dev/null) && ok "Daemon built" || warn "Daemon build failed (will auto-build on first deploy)"
-else
-    warn "Rust/cargo not found. Daemon will be built on first deploy if cargo is available on the remote machine."
-fi
+# Note: Rust daemon is built automatically by setuptools-rust during pip install.
 
 # --- Setup config ---
 
@@ -92,7 +86,7 @@ fi
 
 # --- Create wrapper script ---
 
-WRAPPER="$HOME/.local/bin/remote-code"
+WRAPPER="$HOME/.local/bin/codecast"
 mkdir -p "$(dirname "$WRAPPER")"
 cat > "$WRAPPER" <<SCRIPT
 #!/usr/bin/env bash
@@ -113,11 +107,11 @@ fi
 
 echo ""
 echo -e "${GREEN}============================================${NC}"
-echo -e "${GREEN} Remote Code installed successfully!${NC}"
+echo -e "${GREEN} Codecast installed successfully!${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
 echo "Next steps:"
 echo "  1. Edit your config:  \$EDITOR $CONFIG_DIR/config.yaml"
-echo "  2. Start the bot:     remote-code"
+echo "  2. Start the bot:     codecast"
 echo ""
-echo "Docs: https://github.com/Chivier/remote-code#documentation"
+echo "Docs: https://github.com/Chivier/codecast#documentation"

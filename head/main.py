@@ -1,5 +1,5 @@
 """
-Remote Code - Main Entry Point
+Codecast - Main Entry Point
 
 Starts the Head Node with configured bots (Discord, Telegram, or both).
 Uses the adapter + engine pattern: each platform gets a PlatformAdapter
@@ -29,7 +29,7 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-logger = logging.getLogger("remote-code")
+logger = logging.getLogger("codecast")
 
 # Store startup info for restart via os.execv
 _startup_executable: str = sys.executable
@@ -38,25 +38,39 @@ _startup_workdir: str = os.getcwd()
 
 
 def _resolve_config_path(explicit: str = "") -> str:
-    """Resolve config path: explicit arg > ~/.remote-code/config.yaml > ./config.yaml."""
+    """Resolve config path: explicit arg > ~/.codecast/config.yaml > ./config.yaml."""
     if explicit:
         return explicit
-    home_config = Path.home() / ".remote-code" / "config.yaml"
+    home_config = Path.home() / ".codecast" / "config.yaml"
     if home_config.exists():
         return str(home_config)
     return "config.yaml"
 
 
 def _migrate_from_old_path() -> None:
-    """Auto-migrate ~/.remote-claude/ -> ~/.remote-code/ if needed."""
-    old_dir = Path.home() / ".remote-claude"
-    new_dir = Path.home() / ".remote-code"
-    if old_dir.exists() and not new_dir.exists():
-        import shutil
-        shutil.move(str(old_dir), str(new_dir))
-        logger.info(f"Migrated {old_dir} -> {new_dir}")
-    elif old_dir.exists() and new_dir.exists():
-        logger.warning(f"Both {old_dir} and {new_dir} exist; skipping migration")
+    """Auto-migrate ~/.remote-code/ -> ~/.codecast/ if needed.
+
+    Also handles legacy ~/.remote-claude/ -> ~/.codecast/ migration.
+    """
+    import shutil
+
+    new_dir = Path.home() / ".codecast"
+
+    # Try migrating from ~/.remote-code first (most recent old name)
+    old_remote_code = Path.home() / ".remote-code"
+    if old_remote_code.exists() and not new_dir.exists():
+        shutil.move(str(old_remote_code), str(new_dir))
+        logger.info(f"Migrated {old_remote_code} -> {new_dir}")
+    elif old_remote_code.exists() and new_dir.exists():
+        logger.warning(f"Both {old_remote_code} and {new_dir} exist; skipping migration")
+
+    # Also handle legacy ~/.remote-claude/
+    old_remote_claude = Path.home() / ".remote-claude"
+    if old_remote_claude.exists() and not new_dir.exists():
+        shutil.move(str(old_remote_claude), str(new_dir))
+        logger.info(f"Migrated {old_remote_claude} -> {new_dir}")
+    elif old_remote_claude.exists() and new_dir.exists():
+        logger.warning(f"Both {old_remote_claude} and {new_dir} exist; skipping migration")
 
 
 async def main(config_path: str = "") -> None:
@@ -80,9 +94,7 @@ async def main(config_path: str = "") -> None:
 
     # Initialize shared components
     ssh_manager = SSHManager(config)
-    session_router = SessionRouter(
-        db_path=str(Path(__file__).parent / "sessions.db")
-    )
+    session_router = SessionRouter(db_path=str(Path(__file__).parent / "sessions.db"))
     daemon_client = DaemonClient()
 
     # Initialize file pool for attachments
@@ -102,8 +114,12 @@ async def main(config_path: str = "") -> None:
         try:
             discord_adapter = DiscordAdapter(config, file_pool=file_pool)
             discord_engine = BotEngine(
-                discord_adapter, ssh_manager, session_router,
-                daemon_client, config, file_pool,
+                discord_adapter,
+                ssh_manager,
+                session_router,
+                daemon_client,
+                config,
+                file_pool,
             )
             discord_adapter.set_input_handler(discord_engine.handle_input)
             discord_adapter.set_engine(discord_engine)
@@ -118,8 +134,12 @@ async def main(config_path: str = "") -> None:
         try:
             telegram_adapter = TelegramAdapter(config.bot.telegram)
             telegram_engine = BotEngine(
-                telegram_adapter, ssh_manager, session_router,
-                daemon_client, config, file_pool,
+                telegram_adapter,
+                ssh_manager,
+                session_router,
+                daemon_client,
+                config,
+                file_pool,
             )
             telegram_adapter.set_input_handler(telegram_engine.handle_input)
             adapters.append(telegram_adapter)
@@ -150,7 +170,7 @@ async def main(config_path: str = "") -> None:
             task = asyncio.create_task(adapter.start(), name=name)
             tasks.append(task)
 
-        logger.info(f"Remote Code started with {len(adapters)} bot(s)")
+        logger.info(f"Codecast started with {len(adapters)} bot(s)")
         logger.info(f"Machines: {', '.join(config.machines.keys())}")
         logger.info(f"Default mode: {config.default_mode}")
 
@@ -189,11 +209,11 @@ async def main(config_path: str = "") -> None:
                 except (asyncio.CancelledError, Exception):
                     pass
 
-        logger.info("Remote Code stopped")
+        logger.info("Codecast stopped")
 
 
 def cli_main() -> None:
-    """Entry point for the `remote-code` console script."""
+    """Entry point for the `codecast` console script."""
     config_file = sys.argv[1] if len(sys.argv) > 1 else ""
     global _startup_config_path
     _startup_config_path = config_file

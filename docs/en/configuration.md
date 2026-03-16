@@ -1,6 +1,6 @@
 # Configuration Guide
 
-Remote Code is configured via a `config.yaml` file in the project root. Copy `config.example.yaml` to get started:
+Codecast is configured via a `config.yaml` file in the project root. Copy `config.example.yaml` to get started:
 
 ```bash
 cp config.example.yaml config.yaml
@@ -22,7 +22,7 @@ Path values also support `~` expansion (e.g., `~/.ssh/id_rsa` becomes `/home/use
 
 ### `machines`
 
-Defines the remote machines that Remote Code can connect to. Each key is a machine ID used in commands (e.g., `/start gpu-1 /path`).
+Defines the remote machines that Codecast can connect to. Each key is a machine ID used in commands (e.g., `/start gpu-1 /path`).
 
 ```yaml
 machines:
@@ -90,7 +90,7 @@ The `file:` prefix reads the password from the specified file path. The file sho
 
 ### `bot`
 
-Configures the Discord and/or Telegram bot connections. At least one bot must be configured with a valid token for Remote Code to start.
+Configures the Discord and/or Telegram bot connections. At least one bot must be configured with a valid token for Codecast to start.
 
 #### `bot.discord`
 
@@ -160,16 +160,16 @@ skills:
 
 ```yaml
 daemon:
-  install_dir: ~/.remote-code/daemon
+  install_dir: ~/.codecast/daemon
   auto_deploy: true
-  log_file: ~/.remote-code/daemon.log
+  log_file: ~/.codecast/daemon.log
 ```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `install_dir` | string | `"~/.remote-code/daemon"` | Directory on the remote machine where the daemon code is installed. Contains `dist/`, `node_modules/`, and `package.json`. |
+| `install_dir` | string | `"~/.codecast/daemon"` | Directory on the remote machine where the daemon code is installed. Contains `dist/`, `node_modules/`, and `package.json`. |
 | `auto_deploy` | bool | `true` | Automatically build the daemon locally and deploy via SCP if it is not already installed on the remote machine. If `false`, you must install the daemon manually. |
-| `log_file` | string | `"~/.remote-code/daemon.log"` | Path to the daemon's log file on the remote machine. Daemon stdout/stderr is redirected here when started via `nohup`. |
+| `log_file` | string | `"~/.codecast/daemon.log"` | Path to the daemon's log file on the remote machine. Daemon stdout/stderr is redirected here when started via `nohup`. |
 
 ## Complete Example
 
@@ -215,7 +215,7 @@ skills:
   sync_on_start: true
 
 daemon:
-  install_dir: ~/.remote-code/daemon
+  install_dir: ~/.codecast/daemon
   auto_deploy: true
-  log_file: ~/.remote-code/daemon.log
+  log_file: ~/.codecast/daemon.log
 ```

@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide walks you through deploying Remote Code from scratch: setting up the Head Node on your local machine, configuring a Discord or Telegram bot, and connecting your first remote server.
+This guide walks you through deploying Codecast from scratch: setting up the Head Node on your local machine, configuring a Discord or Telegram bot, and connecting your first remote server.
 
 ## Prerequisites
 
@@ -21,20 +21,20 @@ Before you begin, make sure you have:
 ## Step 1: Clone and Install
 
 ```bash
-git clone https://github.com/Chivier/remote-code.git
+git clone https://github.com/Chivier/codecast.git
 cd remote-code
 
 # Install Python dependencies
 pip install -r requirements.txt
 
-# Alternatively, install as an editable package (also installs the `remote-code` CLI command)
+# Alternatively, install as an editable package (also installs the `codecast` CLI command)
 # pip install -e .
 
 # Build the daemon (TypeScript → JavaScript)
 cd daemon && npm install && npm run build && cd ..
 ```
 
-> **Note:** `pip install -e .` installs the package in editable (development) mode and registers the `remote-code` CLI command on your PATH, so you can run `remote-code` instead of `python -m head.main`. Both methods install the same Python dependencies.
+> **Note:** `pip install -e .` installs the package in editable (development) mode and registers the `codecast` CLI command on your PATH, so you can run `codecast` instead of `python -m head.main`. Both methods install the same Python dependencies.
 
 ---
 
@@ -103,7 +103,7 @@ If this requires a password every time, set up SSH key authentication:
 
 ```bash
 # Generate a key if you don't have one
-ssh-keygen -t ed25519 -C "remote-code"
+ssh-keygen -t ed25519 -C "codecast"
 
 # Copy the public key to the remote machine
 ssh-copy-id alice@192.168.1.100
@@ -134,10 +134,10 @@ python -m head.main
 You should see output like:
 
 ```
-2026-03-14 10:00:00 [remote-code] INFO: Discord bot configured
-2026-03-14 10:00:01 [remote-code] INFO: Remote Code started with 1 bot(s)
-2026-03-14 10:00:01 [remote-code] INFO: Machines: my-server
-2026-03-14 10:00:01 [remote-code] INFO: Default mode: auto
+2026-03-14 10:00:00 [codecast] INFO: Discord bot configured
+2026-03-14 10:00:01 [codecast] INFO: Codecast started with 1 bot(s)
+2026-03-14 10:00:01 [codecast] INFO: Machines: my-server
+2026-03-14 10:00:01 [codecast] INFO: Default mode: auto
 2026-03-14 10:00:02 [discord] INFO: Discord bot logged in as RemoteClaude#1234
 2026-03-14 10:00:02 [discord] INFO: Synced 9 slash command(s)
 ```
@@ -167,7 +167,7 @@ Once connected, just type messages — no command prefix needed. The bot forward
 When `auto_deploy: true` (the default), the Head Node automatically:
 
 1. Builds the daemon locally (`daemon/dist/`)
-2. SCPs it to the remote machine (`~/.remote-code/daemon/`)
+2. SCPs it to the remote machine (`~/.codecast/daemon/`)
 3. Runs `npm install --production` on the remote
 4. Starts the daemon with `nohup node dist/server.js`
 5. Waits up to 30 seconds for it to become healthy
@@ -181,17 +181,17 @@ This means the remote machine needs npm available. After the first deploy, the d
 For production use, run the Head Node as a systemd service so it restarts automatically:
 
 ```ini
-# /etc/systemd/system/remote-code.service
+# /etc/systemd/system/codecast.service
 [Unit]
-Description=Remote Code Head Node
+Description=Codecast Head Node
 After=network.target
 
 [Service]
 Type=simple
 User=alice
-WorkingDirectory=/home/alice/remote-code
+WorkingDirectory=/home/alice/codecast
 Environment="DISCORD_TOKEN=your-token-here"
-ExecStart=/home/alice/remote-code/.venv/bin/python -m head.main
+ExecStart=/home/alice/codecast/.venv/bin/python -m head.main
 Restart=on-failure
 RestartSec=10
 
@@ -200,9 +200,9 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo systemctl enable remote-code
-sudo systemctl start remote-code
-sudo journalctl -u remote-code -f
+sudo systemctl enable codecast
+sudo systemctl start codecast
+sudo journalctl -u codecast -f
 ```
 
 ---

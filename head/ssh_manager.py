@@ -83,23 +83,29 @@ class SSHManager:
         """Resolve the daemon binary path.
 
         Resolution order:
-        1. target/release/remote-code-daemon (dev: local cargo build)
-        2. head/bin/remote-code-daemon-{platform} (installed via pip)
-        3. Falls back to dev path (cargo build will be triggered on deploy)
+        1. target/release/codecast-daemon (dev: local cargo build)
+        2. On PATH (installed via pip install codecast with setuptools-rust)
+        3. head/bin/codecast-daemon-{platform} (CI-bundled wheel)
+        4. Falls back to dev path (cargo build will be triggered on deploy)
         """
         project_root = Path(__file__).parent.parent
 
         # 1. Dev build
-        dev_binary = project_root / "target" / "release" / "remote-code-daemon"
+        dev_binary = project_root / "target" / "release" / "codecast-daemon"
         if dev_binary.exists():
             return dev_binary
 
-        # 2. Bundled binary matching current platform
+        # 2. On PATH (installed via pip install codecast)
+        which = shutil.which("codecast-daemon")
+        if which:
+            return Path(which)
+
+        # 3. Bundled binary matching current platform
         bundled = SSHManager._get_bundled_binary_path()
         if bundled and bundled.exists():
             return bundled
 
-        # 3. Fallback to dev path (will trigger cargo build on deploy)
+        # 4. Fallback to dev path (will trigger cargo build on deploy)
         return dev_binary
 
     @staticmethod
@@ -109,12 +115,12 @@ class SSHManager:
         machine = platform.machine().lower()
 
         platform_map = {
-            ("linux", "x86_64"): "remote-code-daemon-linux-x64",
-            ("linux", "amd64"): "remote-code-daemon-linux-x64",
-            ("darwin", "arm64"): "remote-code-daemon-macos-arm64",
-            ("darwin", "aarch64"): "remote-code-daemon-macos-arm64",
-            ("windows", "x86_64"): "remote-code-daemon-windows-x64.exe",
-            ("windows", "amd64"): "remote-code-daemon-windows-x64.exe",
+            ("linux", "x86_64"): "codecast-daemon-linux-x64",
+            ("linux", "amd64"): "codecast-daemon-linux-x64",
+            ("darwin", "arm64"): "codecast-daemon-macos-arm64",
+            ("darwin", "aarch64"): "codecast-daemon-macos-arm64",
+            ("windows", "x86_64"): "codecast-daemon-windows-x64.exe",
+            ("windows", "amd64"): "codecast-daemon-windows-x64.exe",
         }
 
         binary_name = platform_map.get((system, machine))
@@ -138,9 +144,9 @@ class SSHManager:
         raise RuntimeError("No available local port in range 19100..19300")
 
     async def _read_daemon_port_remote(self, conn: asyncssh.SSHClientConnection, default: int) -> int:
-        """Read the actual daemon port from ~/.remote-code/daemon.port on a remote machine."""
+        """Read the actual daemon port from ~/.codecast/daemon.port on a remote machine."""
         try:
-            result = await conn.run("cat ~/.remote-code/daemon.port 2>/dev/null || true")
+            result = await conn.run("cat ~/.codecast/daemon.port 2>/dev/null || true")
             stdout = (result.stdout or "").strip()
             if stdout:
                 return int(stdout)
@@ -149,8 +155,8 @@ class SSHManager:
         return default
 
     def _read_daemon_port_local(self, default: int) -> int:
-        """Read the actual daemon port from ~/.remote-code/daemon.port locally."""
-        port_file = Path.home() / ".remote-code" / "daemon.port"
+        """Read the actual daemon port from ~/.codecast/daemon.port locally."""
+        port_file = Path.home() / ".codecast" / "daemon.port"
         try:
             if port_file.exists():
                 return int(port_file.read_text().strip())
@@ -243,8 +249,11 @@ class SSHManager:
             if actual_port != machine.daemon_port:
                 logger.info(f"Daemon on {machine_id} using port {actual_port} (configured: {machine.daemon_port})")
             tunnel = SSHTunnel(
-                machine_id, actual_port,
-                conn=None, listener=None, is_localhost=True,
+                machine_id,
+                actual_port,
+                conn=None,
+                listener=None,
+                is_localhost=True,
             )
             self.tunnels[machine_id] = tunnel
             return actual_port
@@ -266,8 +275,10 @@ class SSHManager:
 
         # Create local port forwarding to actual daemon port
         listener = await conn.forward_local_port(
-            "127.0.0.1", local_port,
-            "127.0.0.1", actual_remote_port,
+            "127.0.0.1",
+            local_port,
+            "127.0.0.1",
+            actual_remote_port,
         )
 
         tunnel = SSHTunnel(machine_id, local_port, conn, listener)
@@ -282,7 +293,7 @@ class SSHManager:
         install_dir = self.config.daemon.install_dir
 
         # Check if daemon is already running
-        result = await conn.run(f"pgrep -f 'remote-code-daemon' || true")
+        result = await conn.run(f"pgrep -f 'codecast-daemon' || true")
         stdout = result.stdout.strip() if result.stdout else ""
 
         if stdout:
@@ -291,14 +302,21 @@ class SSHManager:
 
         logger.info(f"Daemon not running on {machine_id}, starting...")
 
-        # Check if daemon binary exists on remote
-        binary_path = f"{install_dir}/remote-code-daemon"
+        # Check if daemon binary exists on remote — at install_dir or on PATH
+        binary_path = f"{install_dir}/codecast-daemon"
         check_result = await conn.run(
-            f"test -x {binary_path} && echo 'exists' || echo 'missing'"
+            f"test -x {binary_path} && echo 'exists' "
+            f"|| command -v codecast-daemon >/dev/null 2>&1 && echo 'on-path' "
+            f"|| echo 'missing'"
         )
         check_out = check_result.stdout.strip() if check_result.stdout else ""
 
-        if check_out == "missing":
+        if check_out == "on-path":
+            # Daemon installed via pip on remote — resolve its path
+            path_result = await conn.run("command -v codecast-daemon")
+            binary_path = (path_result.stdout or "").strip()
+            logger.info(f"Using pip-installed daemon on {machine_id}: {binary_path}")
+        elif check_out == "missing":
             if self.config.daemon.auto_deploy:
                 await self._deploy_daemon(machine_id, conn)
             else:
@@ -314,11 +332,7 @@ class SSHManager:
         path_value = ":".join(extra_paths) + ":$PATH"
 
         # Start daemon with enriched PATH
-        start_cmd = (
-            f"DAEMON_PORT={machine.daemon_port} "
-            f"PATH={path_value} "
-            f"nohup {binary_path} > {log_file} 2>&1 &"
-        )
+        start_cmd = f"DAEMON_PORT={machine.daemon_port} PATH={path_value} nohup {binary_path} > {log_file} 2>&1 &"
         await conn.run(start_cmd)
 
         # Wait for daemon to be ready (poll health endpoint)
@@ -347,10 +361,7 @@ class SSHManager:
 
         # Check if daemon is already running
         try:
-            result = subprocess.run(
-                ["pgrep", "-f", "remote-code-daemon"],
-                capture_output=True, text=True
-            )
+            result = subprocess.run(["pgrep", "-f", "codecast-daemon"], capture_output=True, text=True)
             if result.stdout.strip():
                 logger.info(f"Local daemon already running (PID: {result.stdout.strip()})")
                 return
@@ -359,15 +370,18 @@ class SSHManager:
 
         logger.info(f"Local daemon not running, starting on port {machine.daemon_port}...")
 
-        # Check if daemon binary exists
-        binary_path = install_dir / "remote-code-daemon"
+        # Check if daemon binary exists — at install_dir or on PATH
+        binary_path = install_dir / "codecast-daemon"
         if not binary_path.exists():
-            if self.config.daemon.auto_deploy:
+            which = shutil.which("codecast-daemon")
+            if which:
+                binary_path = Path(which)
+                logger.info(f"Using pip-installed daemon: {binary_path}")
+            elif self.config.daemon.auto_deploy:
                 await self._deploy_daemon_local(machine, install_dir)
             else:
                 raise RuntimeError(
-                    f"Daemon not installed at {install_dir}. "
-                    "Set daemon.auto_deploy: true or install manually."
+                    f"Daemon not installed at {install_dir}. Set daemon.auto_deploy: true or install manually."
                 )
 
         log_file = Path(self.config.daemon.log_file).expanduser()
@@ -393,6 +407,7 @@ class SSHManager:
         # Wait for daemon to be ready
         # Read actual port from port file since daemon may have picked a different one
         import aiohttp
+
         for attempt in range(15):
             await asyncio.sleep(2)
             check_port = self._read_daemon_port_local(machine.daemon_port)
@@ -424,14 +439,15 @@ class SSHManager:
             result = subprocess.run(
                 ["cargo", "build", "--release"],
                 cwd=str(project_root),
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
             )
             if result.returncode != 0:
                 raise RuntimeError(f"Daemon build failed: {result.stderr}")
 
         # Create install directory and copy binary
         install_dir.mkdir(parents=True, exist_ok=True)
-        dest_binary = install_dir / "remote-code-daemon"
+        dest_binary = install_dir / "codecast-daemon"
         shutil.copy2(str(self._rust_binary), str(dest_binary))
         dest_binary.chmod(0o755)
 
@@ -450,7 +466,8 @@ class SSHManager:
             result = subprocess.run(
                 ["cargo", "build", "--release"],
                 cwd=str(project_root),
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
             )
             if result.returncode != 0:
                 raise RuntimeError(f"Daemon build failed: {result.stderr}")
@@ -459,7 +476,7 @@ class SSHManager:
         await conn.run(f"mkdir -p {install_dir}")
 
         # SCP binary to remote
-        remote_binary = f"{install_dir}/remote-code-daemon"
+        remote_binary = f"{install_dir}/codecast-daemon"
         await asyncssh.scp(str(self._rust_binary), (conn, remote_binary))
         await conn.run(f"chmod +x {remote_binary}")
 
@@ -535,10 +552,7 @@ class SSHManager:
         jump_hosts = {m.proxy_jump for m in self.machines.values() if m.proxy_jump}
 
         # Filter to machines we want to check
-        targets = [
-            (mid, m) for mid, m in self.machines.items()
-            if not (mid in jump_hosts and not m.default_paths)
-        ]
+        targets = [(mid, m) for mid, m in self.machines.items() if not (mid in jump_hosts and not m.default_paths)]
 
         async def check_machine(machine_id: str, machine: MachineConfig) -> dict:
             status = "unknown"
@@ -548,8 +562,9 @@ class SSHManager:
                 status = "online"
                 try:
                     result = subprocess.run(
-                        ["pgrep", "-f", "remote-code-daemon"],
-                        capture_output=True, text=True,
+                        ["pgrep", "-f", "codecast-daemon"],
+                        capture_output=True,
+                        text=True,
                     )
                     daemon_status = "running" if result.stdout.strip() else "stopped"
                 except FileNotFoundError:
@@ -562,7 +577,7 @@ class SSHManager:
                     )
                     status = "online"
                     daemon_check = await conn.run(
-                        f"pgrep -f 'remote-code-daemon' > /dev/null 2>&1 && echo 'running' || echo 'stopped'"
+                        f"pgrep -f 'codecast-daemon' > /dev/null 2>&1 && echo 'running' || echo 'stopped'"
                     )
                     daemon_status = (daemon_check.stdout or "").strip()
                     conn.close()
@@ -582,9 +597,7 @@ class SSHManager:
             }
 
         # Check all machines in parallel
-        results = await asyncio.gather(
-            *(check_machine(mid, m) for mid, m in targets)
-        )
+        results = await asyncio.gather(*(check_machine(mid, m) for mid, m in targets))
         return list(results)
 
     def get_local_port(self, machine_id: str) -> Optional[int]:
@@ -643,9 +656,7 @@ class SSHManager:
             remote_path = f"{remote_base}/{remote_filename}"
             await asyncssh.scp(str(entry.local_path), (conn, remote_path))
             mapping[entry.file_id] = remote_path
-            logger.info(
-                f"Uploaded {entry.original_name} to {machine_id}:{remote_path}"
-            )
+            logger.info(f"Uploaded {entry.original_name} to {machine_id}:{remote_path}")
 
         return mapping
 

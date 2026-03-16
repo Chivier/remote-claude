@@ -318,7 +318,7 @@ class FileForwardConfig:
     rules: list[FileForwardRule] = field(default_factory=list)
     default_max_size: int = 5 * 1024 * 1024   # 5MB default
     default_auto: bool = False                  # Default: notify only
-    download_dir: str = "~/.remote-code/downloads"  # Temp download location
+    download_dir: str = "~/.codecast/downloads"  # Temp download location
 
 
 class FileForwardMatcher:
@@ -387,7 +387,7 @@ For each detected file path:
 # Remote file forwarding settings
 file_forward:
   enabled: true
-  download_dir: ~/.remote-code/downloads   # Temp local storage
+  download_dir: ~/.codecast/downloads   # Temp local storage
   default_max_size: 5242880                  # 5MB - default max for unmatched files
   default_auto: false                        # Unmatched files: notify only (don't auto-send)
   rules:

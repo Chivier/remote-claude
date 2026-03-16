@@ -28,7 +28,7 @@ Discord User
   └─ Sends message + attachment(report.pdf)
       └─ bot_discord.py: on_message()
           ├─ file_pool.download_discord_attachment(att)
-          │   → Downloads to ~/.remote-code/file-pool/abc123_report.pdf
+          │   → Downloads to ~/.codecast/file-pool/abc123_report.pdf
           ├─ Builds message: "Analyze this <discord_file>abc123</discord_file>"
           └─ _forward_message_with_heartbeat(text, file_refs=[entry])
               │
@@ -38,9 +38,9 @@ Discord User
               │
               ├─ bot_base._upload_and_replace_files(machine_id, text, file_refs)
               │   ├─ ssh_manager.upload_files(machine_id, file_refs)
-              │   │   → SCP to /tmp/remote-code/files/abc123_report.pdf
-              │   │   → Returns {"abc123": "/tmp/remote-code/files/abc123_report.pdf"}
-              │   └─ Replaces: "Analyze this /tmp/remote-code/files/abc123_report.pdf"
+              │   │   → SCP to /tmp/codecast/files/abc123_report.pdf
+              │   │   → Returns {"abc123": "/tmp/codecast/files/abc123_report.pdf"}
+              │   └─ Replaces: "Analyze this /tmp/codecast/files/abc123_report.pdf"
               └─ daemon_client.send_message(port, session_id, replaced_msg)
                   → Daemon receives plain text with valid remote paths
 ```
@@ -56,7 +56,7 @@ Discord User
            ▼
 ┌────────────────────────┐     ┌─────────────────────┐
 │   bot_discord.py       │────▶│   FilePool           │
-│   on_message()         │     │   ~/.remote-code/  │
+│   on_message()         │     │   ~/.codecast/  │
 │                        │     │   file-pool/          │
 └──────────┬─────────────┘     └─────────────────────┘
            │ text + file_refs
@@ -71,7 +71,7 @@ Discord User
            ▼                               ▼
 ┌────────────────────────┐     ┌─────────────────────┐
 │   daemon_client.py     │     │   Remote Machine     │
-│   send_message()       │     │   /tmp/remote-code/│
+│   send_message()       │     │   /tmp/codecast/│
 │   (unchanged)          │     │   files/abc123.pdf   │
 └──────────┬─────────────┘     └─────────────────────┘
            │ RPC via SSH tunnel
@@ -350,8 +350,8 @@ New `FilePoolConfig` dataclass:
 @dataclass
 class FilePoolConfig:
     max_size: int = 1073741824          # 1GB in bytes
-    pool_dir: str = "~/.remote-code/file-pool"
-    remote_dir: str = "/tmp/remote-code/files"
+    pool_dir: str = "~/.codecast/file-pool"
+    remote_dir: str = "/tmp/codecast/files"
     allowed_types: list[str] = field(default_factory=lambda: list(DEFAULT_ALLOWED_TYPES))
 ```
 
@@ -386,8 +386,8 @@ DEFAULT_ALLOWED_TYPES = [
 file_pool_raw = raw.get("file_pool", {})
 config.file_pool = FilePoolConfig(
     max_size=file_pool_raw.get("max_size", 1073741824),
-    pool_dir=expand_env_vars(file_pool_raw.get("pool_dir", "~/.remote-code/file-pool")),
-    remote_dir=file_pool_raw.get("remote_dir", "/tmp/remote-code/files"),
+    pool_dir=expand_env_vars(file_pool_raw.get("pool_dir", "~/.codecast/file-pool")),
+    remote_dir=file_pool_raw.get("remote_dir", "/tmp/codecast/files"),
     allowed_types=file_pool_raw.get("allowed_types", DEFAULT_ALLOWED_TYPES),
 )
 ```
@@ -398,8 +398,8 @@ New section in `config.example.yaml`:
 # File transfer settings
 file_pool:
   max_size: 1073741824              # Max pool size in bytes (default: 1GB)
-  pool_dir: ~/.remote-code/file-pool  # Local file cache directory
-  remote_dir: /tmp/remote-code/files  # Remote file staging directory
+  pool_dir: ~/.codecast/file-pool  # Local file cache directory
+  remote_dir: /tmp/codecast/files  # Remote file staging directory
   allowed_types:                    # MIME type patterns for allowed files
     - text/plain
     - text/markdown
@@ -497,7 +497,7 @@ discord_bot = DiscordBot(
 
 1. Start a session: `/start gpu-1 /home/user/project`
 2. Upload a PDF in Discord: "Analyze this report" + attach report.pdf
-3. Verify: file appears in remote `/tmp/remote-code/files/`
+3. Verify: file appears in remote `/tmp/codecast/files/`
 4. Verify: Claude receives message with correct remote path
 5. Test with image, audio, video files
 6. Test with unsupported file (e.g., `.py`) → should be skipped

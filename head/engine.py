@@ -153,9 +153,7 @@ class BotEngine:
             # Forward to active Claude session
             await self._forward_message(channel_id, text)
 
-    async def _handle_command(
-        self, channel_id: str, text: str, user_id: Optional[int] = None
-    ) -> None:
+    async def _handle_command(self, channel_id: str, text: str, user_id: Optional[int] = None) -> None:
         """Parse and dispatch a command."""
         parts = text.split()
         cmd = parts[0].lower()
@@ -217,22 +215,16 @@ class BotEngine:
                     f"Unknown command: `{cmd}`. Use `/help` for available commands.",
                 )
         except DaemonConnectionError as e:
-            await self.send_message(
-                channel_id, format_error(f"Cannot connect to daemon: {e}")
-            )
+            await self.send_message(channel_id, format_error(f"Cannot connect to daemon: {e}"))
         except DaemonError as e:
-            await self.send_message(
-                channel_id, format_error(f"Daemon error: {e}")
-            )
+            await self.send_message(channel_id, format_error(f"Daemon error: {e}"))
         except Exception as e:
             logger.exception(f"Error handling command: {text}")
             await self.send_message(channel_id, format_error(str(e)))
 
     # ─── Commands ───
 
-    async def cmd_start(
-        self, channel_id: str, args: list[str], silent_init: bool = False
-    ) -> None:
+    async def cmd_start(self, channel_id: str, args: list[str], silent_init: bool = False) -> None:
         """/start <machine> <remote_path> - Create a new session."""
         if len(args) < 2:
             await self.send_message(
@@ -249,9 +241,7 @@ class BotEngine:
         # using the correct remote user's home directory
 
         if not silent_init:
-            await self.send_message(
-                channel_id, f"Starting session on **{machine_id}**:`{path}`..."
-            )
+            await self.send_message(channel_id, f"Starting session on **{machine_id}**:`{path}`...")
 
         # Ensure SSH tunnel
         local_port = await self.ssh.ensure_tunnel(machine_id)
@@ -260,9 +250,7 @@ class BotEngine:
         await self.ssh.sync_skills(machine_id, path)
 
         # Create session on daemon
-        daemon_session_id = await self.daemon.create_session(
-            local_port, path, self.config.default_mode
-        )
+        daemon_session_id = await self.daemon.create_session(local_port, path, self.config.default_mode)
 
         # Register in session router
         name = self.router.register(
@@ -285,9 +273,7 @@ class BotEngine:
     async def cmd_resume(self, channel_id: str, args: list[str]) -> None:
         """/resume <session_id_or_name> - Resume a previous session."""
         if len(args) < 1:
-            await self.send_message(
-                channel_id, "Usage: `/resume <session_id_or_name>`"
-            )
+            await self.send_message(channel_id, "Usage: `/resume <session_id_or_name>`")
             return
 
         identifier = args[0]
@@ -295,9 +281,7 @@ class BotEngine:
         # Find the session by name or daemon ID
         session = self.router.find_session_by_name_or_id(identifier)
         if not session:
-            await self.send_message(
-                channel_id, f"Session `{identifier}` not found in records."
-            )
+            await self.send_message(channel_id, f"Session `{identifier}` not found in records.")
             return
 
         session_id = session.daemon_session_id
@@ -312,24 +296,16 @@ class BotEngine:
         local_port = await self.ssh.ensure_tunnel(session.machine_id)
 
         # Resume on daemon
-        result = await self.daemon.resume_session(
-            local_port, session_id, session.sdk_session_id
-        )
+        result = await self.daemon.resume_session(local_port, session_id, session.sdk_session_id)
 
         if not result.get("ok"):
-            await self.send_message(
-                channel_id, format_error("Failed to resume session")
-            )
+            await self.send_message(channel_id, format_error("Failed to resume session"))
             return
 
         # Re-register as active
-        self.router.register(
-            channel_id, session.machine_id, session.path, session_id, session.mode
-        )
+        self.router.register(channel_id, session.machine_id, session.path, session_id, session.mode)
 
-        fallback_msg = (
-            " (fresh session with history injected)" if result.get("fallback") else ""
-        )
+        fallback_msg = " (fresh session with history injected)" if result.get("fallback") else ""
         await self.send_message(
             channel_id,
             f"Session resumed{fallback_msg} on **{session.machine_id}**:`{session.path}`",
@@ -340,9 +316,7 @@ class BotEngine:
         if not args:
             await self.send_message(
                 channel_id,
-                "Usage:\n"
-                "`/ls machine` - List all machines\n"
-                "`/ls session [machine]` - List sessions",
+                "Usage:\n`/ls machine` - List all machines\n`/ls session [machine]` - List sessions",
             )
             return
 
@@ -358,9 +332,7 @@ class BotEngine:
             await self.send_message(channel_id, format_session_list(sessions))
 
         else:
-            await self.send_message(
-                channel_id, "Usage: `/ls machine` or `/ls session [machine]`"
-            )
+            await self.send_message(channel_id, "Usage: `/ls machine` or `/ls session [machine]`")
 
     async def cmd_exit(self, channel_id: str) -> None:
         """/exit - Detach from current session (doesn't destroy it)."""
@@ -380,9 +352,7 @@ class BotEngine:
     async def cmd_rm(self, channel_id: str, args: list[str]) -> None:
         """/rm <machine> <path> - Destroy a session."""
         if len(args) < 2:
-            await self.send_message(
-                channel_id, "Usage: `/rm <machine_id> <path>`"
-            )
+            await self.send_message(channel_id, "Usage: `/rm <machine_id> <path>`")
             return
 
         machine_id = args[0]
@@ -401,9 +371,7 @@ class BotEngine:
             if session.status in ("active", "detached"):
                 try:
                     local_port = await self.ssh.ensure_tunnel(machine_id)
-                    await self.daemon.destroy_session(
-                        local_port, session.daemon_session_id
-                    )
+                    await self.daemon.destroy_session(local_port, session.daemon_session_id)
                 except Exception as e:
                     logger.warning(f"Failed to destroy daemon session: {e}")
                 self.router.destroy(session.channel_id)
@@ -439,25 +407,17 @@ class BotEngine:
 
         session = self.router.resolve(channel_id)
         if not session:
-            await self.send_message(
-                channel_id, "No active session. Use `/start` first."
-            )
+            await self.send_message(channel_id, "No active session. Use `/start` first.")
             return
 
         local_port = await self.ssh.ensure_tunnel(session.machine_id)
-        ok = await self.daemon.set_mode(
-            local_port, session.daemon_session_id, mode
-        )
+        ok = await self.daemon.set_mode(local_port, session.daemon_session_id, mode)
 
         if ok:
             self.router.update_mode(channel_id, mode)
-            await self.send_message(
-                channel_id, f"Mode set to **{display_mode(mode)}**"
-            )
+            await self.send_message(channel_id, f"Mode set to **{display_mode(mode)}**")
         else:
-            await self.send_message(
-                channel_id, format_error("Failed to set mode")
-            )
+            await self.send_message(channel_id, format_error("Failed to set mode"))
 
     async def cmd_status(self, channel_id: str) -> None:
         """/status - Show current session status."""
@@ -469,9 +429,7 @@ class BotEngine:
         queue_stats = None
         try:
             local_port = await self.ssh.ensure_tunnel(session.machine_id)
-            queue_stats = await self.daemon.get_queue_stats(
-                local_port, session.daemon_session_id
-            )
+            queue_stats = await self.daemon.get_queue_stats(local_port, session.daemon_session_id)
         except Exception:
             pass
 
@@ -481,54 +439,40 @@ class BotEngine:
         """/interrupt - Interrupt Claude's current operation."""
         session = self.router.resolve(channel_id)
         if not session:
-            await self.send_message(
-                channel_id, "No active session. Use `/start` first."
-            )
+            await self.send_message(channel_id, "No active session. Use `/start` first.")
             return
 
         try:
             local_port = await self.ssh.ensure_tunnel(session.machine_id)
-            result = await self.daemon.interrupt_session(
-                local_port, session.daemon_session_id
-            )
+            result = await self.daemon.interrupt_session(local_port, session.daemon_session_id)
 
             if result.get("interrupted"):
-                await self.send_message(
-                    channel_id, "Interrupted Claude's current operation."
-                )
+                await self.send_message(channel_id, "Interrupted Claude's current operation.")
             else:
                 await self.send_message(
                     channel_id,
                     "Claude is not currently processing any request.",
                 )
         except Exception as e:
-            await self.send_message(
-                channel_id, format_error(f"Failed to interrupt: {e}")
-            )
+            await self.send_message(channel_id, format_error(f"Failed to interrupt: {e}"))
 
     async def cmd_clear(self, channel_id: str) -> None:
         """/clear - Destroy the current session and start a new one in the same directory."""
         session = self.router.resolve(channel_id)
         if not session:
-            await self.send_message(
-                channel_id, "No active session. Use `/start` first."
-            )
+            await self.send_message(channel_id, "No active session. Use `/start` first.")
             return
 
         machine_id = session.machine_id
         path = session.path
         old_name = session.name or session.daemon_session_id
 
-        await self.send_message(
-            channel_id, f"Clearing session **{old_name}** and starting fresh..."
-        )
+        await self.send_message(channel_id, f"Clearing session **{old_name}** and starting fresh...")
 
         # Destroy old session
         try:
             local_port = await self.ssh.ensure_tunnel(machine_id)
-            await self.daemon.destroy_session(
-                local_port, session.daemon_session_id
-            )
+            await self.daemon.destroy_session(local_port, session.daemon_session_id)
         except Exception as e:
             logger.warning(f"Failed to destroy session during /clear: {e}")
         self.router.destroy(channel_id)
@@ -579,9 +523,7 @@ class BotEngine:
 
         session = self.router.resolve(channel_id)
         if not session:
-            await self.send_message(
-                channel_id, "No active session. Use `/start` first."
-            )
+            await self.send_message(channel_id, "No active session. Use `/start` first.")
             return
 
         old_name = session.name or "(unnamed)"
@@ -668,9 +610,7 @@ class BotEngine:
         try:
             local_port = await self.ssh.ensure_tunnel(machine_id)
             monitor = await self.daemon.monitor_sessions(local_port)
-            await self.send_message(
-                channel_id, format_monitor(machine_id, monitor)
-            )
+            await self.send_message(channel_id, format_monitor(machine_id, monitor))
         except Exception as e:
             await self.send_message(
                 channel_id,
@@ -702,8 +642,7 @@ class BotEngine:
         if machine_id in self.config.machines:
             await self.send_message(
                 channel_id,
-                f"Machine `{machine_id}` already exists. "
-                f"Remove it first with `/remove-machine {machine_id}`.",
+                f"Machine `{machine_id}` already exists. Remove it first with `/remove-machine {machine_id}`.",
             )
             return
 
@@ -740,9 +679,7 @@ class BotEngine:
                 try:
                     port = int(args[i + 1])
                 except ValueError:
-                    await self.send_message(
-                        channel_id, f"Invalid port: `{args[i + 1]}`"
-                    )
+                    await self.send_message(channel_id, f"Invalid port: `{args[i + 1]}`")
                     return
                 i += 2
             elif flag == "--daemon-port" and i + 1 < len(args):
@@ -759,9 +696,7 @@ class BotEngine:
                 paths = [p.strip() for p in args[i + 1].split(",") if p.strip()]
                 i += 2
             else:
-                await self.send_message(
-                    channel_id, f"Unknown option: `{flag}`"
-                )
+                await self.send_message(channel_id, f"Unknown option: `{flag}`")
                 return
 
         # If host/user not provided, try SSH config
@@ -797,8 +732,7 @@ class BotEngine:
             await self.send_message(
                 channel_id,
                 f"Resolved `{machine_id}` from SSH config: "
-                f"host=`{host}`, user=`{user}`"
-                + (f", proxy=`{proxy_jump}`" if proxy_jump else ""),
+                f"host=`{host}`, user=`{user}`" + (f", proxy=`{proxy_jump}`" if proxy_jump else ""),
             )
 
         # Validate proxy_jump references an existing machine
@@ -856,9 +790,7 @@ class BotEngine:
 
         entries = parse_ssh_config()
         if not entries:
-            await self.send_message(
-                channel_id, "No SSH hosts found in `~/.ssh/config`."
-            )
+            await self.send_message(channel_id, "No SSH hosts found in `~/.ssh/config`.")
             return
 
         # Filter out hosts that are already configured
@@ -879,13 +811,9 @@ class BotEngine:
         display = format_ssh_hosts_for_display(new_entries)
         await self.send_message(channel_id, display)
 
-    async def _handle_ssh_import_selection(
-        self, channel_id: str, text: str
-    ) -> bool:
+    async def _handle_ssh_import_selection(self, channel_id: str, text: str) -> bool:
         """Handle user's response to SSH import listing."""
-        if not hasattr(self, "_ssh_import_entries") or not hasattr(
-            self, "_ssh_import_channel"
-        ):
+        if not hasattr(self, "_ssh_import_entries") or not hasattr(self, "_ssh_import_channel"):
             return False
         if channel_id != self._ssh_import_channel:
             return False
@@ -894,11 +822,7 @@ class BotEngine:
 
         # Parse selection (numbers separated by spaces)
         try:
-            indices = [
-                int(x.strip())
-                for x in text.strip().split()
-                if x.strip().isdigit()
-            ]
+            indices = [int(x.strip()) for x in text.strip().split() if x.strip().isdigit()]
         except ValueError:
             return False
 
@@ -956,40 +880,28 @@ class BotEngine:
 
         result_parts: list[str] = []
         if added:
-            result_parts.append(
-                f"Added {len(added)} machine(s): {', '.join(added)}"
-            )
+            result_parts.append(f"Added {len(added)} machine(s): {', '.join(added)}")
         if errors:
             result_parts.append(f"Errors: {'; '.join(errors)}")
 
-        await self.send_message(
-            channel_id, "\n".join(result_parts) or "No machines added."
-        )
+        await self.send_message(channel_id, "\n".join(result_parts) or "No machines added.")
         return True
 
-    async def cmd_remove_machine(
-        self, channel_id: str, args: list[str]
-    ) -> None:
+    async def cmd_remove_machine(self, channel_id: str, args: list[str]) -> None:
         """/remove-machine <machine_id> - Remove a machine from config."""
         if not args:
-            await self.send_message(
-                channel_id, "Usage: `/remove-machine <machine_id>`"
-            )
+            await self.send_message(channel_id, "Usage: `/remove-machine <machine_id>`")
             return
 
         machine_id = args[0]
 
         if machine_id not in self.config.machines:
-            await self.send_message(
-                channel_id, f"Machine `{machine_id}` not found."
-            )
+            await self.send_message(channel_id, f"Machine `{machine_id}` not found.")
             return
 
         # Check if this machine is a proxy_jump target for other machines
         dependents = [
-            mid
-            for mid, mc in self.config.machines.items()
-            if mc.proxy_jump == machine_id and mid != machine_id
+            mid for mid, mc in self.config.machines.items() if mc.proxy_jump == machine_id and mid != machine_id
         ]
         if dependents:
             await self.send_message(
@@ -1002,19 +914,14 @@ class BotEngine:
 
         # Check for active sessions
         sessions = self.router.list_sessions(machine_id)
-        active_sessions = [
-            s for s in sessions if s.status in ("active", "detached")
-        ]
+        active_sessions = [s for s in sessions if s.status in ("active", "detached")]
 
         if active_sessions:
             self._remove_confirm_machine = machine_id
             self._remove_confirm_channel = channel_id
             self._remove_confirm_sessions = active_sessions
 
-            session_list = "\n".join(
-                f"  - `{s.daemon_session_id}` ({s.status}) at `{s.path}`"
-                for s in active_sessions
-            )
+            session_list = "\n".join(f"  - `{s.daemon_session_id}` ({s.status}) at `{s.path}`" for s in active_sessions)
             await self.send_message(
                 channel_id,
                 f"Machine **{machine_id}** has {len(active_sessions)} active session(s):\n"
@@ -1026,13 +933,9 @@ class BotEngine:
         # No active sessions, remove directly
         await self._do_remove_machine(channel_id, machine_id)
 
-    async def _handle_remove_confirmation(
-        self, channel_id: str, text: str
-    ) -> bool:
+    async def _handle_remove_confirmation(self, channel_id: str, text: str) -> bool:
         """Handle user's confirmation for machine removal."""
-        if not hasattr(self, "_remove_confirm_machine") or not hasattr(
-            self, "_remove_confirm_channel"
-        ):
+        if not hasattr(self, "_remove_confirm_machine") or not hasattr(self, "_remove_confirm_channel"):
             return False
         if channel_id != self._remove_confirm_channel:
             return False
@@ -1052,9 +955,7 @@ class BotEngine:
                     if s.status == "active":
                         self.router.detach(s.channel_id)
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to detach session {s.daemon_session_id}: {e}"
-                    )
+                    logger.warning(f"Failed to detach session {s.daemon_session_id}: {e}")
 
             await self._do_remove_machine(channel_id, machine_id)
         else:
@@ -1065,9 +966,7 @@ class BotEngine:
 
         return True
 
-    async def _do_remove_machine(
-        self, channel_id: str, machine_id: str
-    ) -> None:
+    async def _do_remove_machine(self, channel_id: str, machine_id: str) -> None:
         """Actually remove a machine from config and runtime."""
         if machine_id in self.ssh.tunnels:
             tunnel = self.ssh.tunnels[machine_id]
@@ -1085,13 +984,9 @@ class BotEngine:
                 f"**Warning:** Removed from runtime but failed to update config.yaml: {e}",
             )
 
-        await self.send_message(
-            channel_id, f"Machine **{machine_id}** removed."
-        )
+        await self.send_message(channel_id, f"Machine **{machine_id}** removed.")
 
-    async def cmd_restart(
-        self, channel_id: str, user_id: Optional[int] = None
-    ) -> None:
+    async def cmd_restart(self, channel_id: str, user_id: Optional[int] = None) -> None:
         """/restart - Restart the head node process (admin only)."""
         if not self.is_admin(user_id):
             await self.send_message(
@@ -1106,9 +1001,7 @@ class BotEngine:
         await asyncio.sleep(1)
         self._do_restart(channel_id, "Restart")
 
-    async def cmd_update(
-        self, channel_id: str, user_id: Optional[int] = None
-    ) -> None:
+    async def cmd_update(self, channel_id: str, user_id: Optional[int] = None) -> None:
         """/update - Git pull and restart (admin only)."""
         if not self.is_admin(user_id):
             await self.send_message(
@@ -1142,9 +1035,7 @@ class BotEngine:
             return
 
         if result.returncode != 0:
-            stderr = (
-                result.stderr.strip()[:500] if result.stderr else "(no output)"
-            )
+            stderr = result.stderr.strip()[:500] if result.stderr else "(no output)"
             await self.send_message(
                 channel_id,
                 format_error(f"Git pull failed:\n```\n{stderr}\n```"),
@@ -1169,9 +1060,7 @@ class BotEngine:
         self._do_restart(channel_id, "Update")
 
     @staticmethod
-    def _do_restart(
-        channel_id: str | None = None, reason: str = "Restart"
-    ) -> None:
+    def _do_restart(channel_id: str | None = None, reason: str = "Restart") -> None:
         """Replace this process with a fresh copy via os.execv."""
         from . import main as main_module
 
@@ -1194,7 +1083,7 @@ class BotEngine:
 
     async def cmd_help(self, channel_id: str) -> None:
         """/help - Show available commands."""
-        help_text = """**Remote Code Commands:**
+        help_text = """**Codecast Commands:**
 
 `/start <machine> <remote_path>` - Start a new Claude session
 `/resume <session_id_or_name>` - Resume a previous session
@@ -1264,9 +1153,7 @@ After `/start` or `/resume`, send any message to interact with Claude."""
 
         # Prevent concurrent streaming to the same channel
         if channel_id in self._streaming:
-            await self.send_message(
-                channel_id, "Claude is still processing. Please wait..."
-            )
+            await self.send_message(channel_id, "Claude is still processing. Please wait...")
             return
 
         self._streaming.add(channel_id)
@@ -1280,13 +1167,9 @@ After `/start` or `/resume`, send any message to interact with Claude."""
             # Upload files and replace markers before sending to Claude
             if file_refs:
                 try:
-                    text = await self._upload_and_replace_files(
-                        session.machine_id, text, file_refs
-                    )
+                    text = await self._upload_and_replace_files(session.machine_id, text, file_refs)
                 except Exception as e:
-                    await self.send_message(
-                        channel_id, format_error(f"File upload failed: {e}")
-                    )
+                    await self.send_message(channel_id, format_error(f"File upload failed: {e}"))
                     return
 
             # Start streaming response
@@ -1297,9 +1180,7 @@ After `/start` or `/resume`, send any message to interact with Claude."""
             tool_batch: list[dict] = []
             tool_batch_size = self.config.tool_batch_size
 
-            async for event in self.daemon.send_message(
-                local_port, session.daemon_session_id, text
-            ):
+            async for event in self.daemon.send_message(local_port, session.daemon_session_id, text):
                 event_type = event.get("type", "")
 
                 # Ignore keepalive pings from daemon
@@ -1321,20 +1202,14 @@ After `/start` or `/resume`, send any message to interact with Claude."""
 
                         if now - last_update >= STREAM_UPDATE_INTERVAL:
                             if current_msg is None:
-                                current_msg = await self.send_message(
-                                    channel_id, buffer + " ▌"
-                                )
+                                current_msg = await self.send_message(channel_id, buffer + " ▌")
                             else:
                                 if len(buffer) > STREAM_BUFFER_FLUSH_SIZE:
-                                    await self.edit_message(
-                                        current_msg, buffer
-                                    )
+                                    await self.edit_message(current_msg, buffer)
                                     buffer = ""
                                     current_msg = None
                                 else:
-                                    await self.edit_message(
-                                        current_msg, buffer + " ▌"
-                                    )
+                                    await self.edit_message(current_msg, buffer + " ▌")
                             last_update = now
 
                 elif event_type == "text":
@@ -1360,29 +1235,17 @@ After `/start` or `/resume`, send any message to interact with Claude."""
                 elif event_type == "result":
                     sdk_session_id = event.get("session_id")
                     if sdk_session_id:
-                        self.router.update_sdk_session(
-                            channel_id, sdk_session_id
-                        )
+                        self.router.update_sdk_session(channel_id, sdk_session_id)
 
                 elif event_type == "system":
                     model = event.get("model")
                     if model and event.get("subtype") == "init":
                         session = self.router.resolve(channel_id)
-                        daemon_sid = (
-                            session.daemon_session_id if session else ""
-                        )
+                        daemon_sid = session.daemon_session_id if session else ""
                         if daemon_sid not in self._init_shown:
                             self._init_shown.add(daemon_sid)
-                            mode_str = (
-                                display_mode(session.mode)
-                                if session
-                                else "unknown"
-                            )
-                            name_str = (
-                                f" | Session: **{session.name}**"
-                                if session and session.name
-                                else ""
-                            )
+                            mode_str = display_mode(session.mode) if session else "unknown"
+                            name_str = f" | Session: **{session.name}**" if session and session.name else ""
                             await self.send_message(
                                 channel_id,
                                 f"Connected to **{model}** | Mode: **{mode_str}**{name_str}",
@@ -1398,9 +1261,7 @@ After `/start` or `/resume`, send any message to interact with Claude."""
 
                 elif event_type == "error":
                     error_msg = event.get("message", "Unknown error")
-                    await self.send_message(
-                        channel_id, format_error(error_msg)
-                    )
+                    await self.send_message(channel_id, format_error(error_msg))
 
             # Flush remaining tool batch
             if tool_batch:
@@ -1425,9 +1286,7 @@ After `/start` or `/resume`, send any message to interact with Claude."""
             )
         except Exception as e:
             logger.exception("Error forwarding message to Claude")
-            await self.send_message(
-                channel_id, format_error(f"Unexpected error: {e}")
-            )
+            await self.send_message(channel_id, format_error(f"Unexpected error: {e}"))
         finally:
             await self.adapter.stop_typing(channel_id)
             self._streaming.discard(channel_id)

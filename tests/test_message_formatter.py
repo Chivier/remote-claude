@@ -285,12 +285,14 @@ class TestFormatMachineList:
         assert result == "No machines configured."
 
     def test_single_online_machine(self):
-        machines = [{
-            "id": "gpu-1",
-            "host": "192.168.1.100",
-            "status": "online",
-            "daemon": "running",
-        }]
+        machines = [
+            {
+                "id": "gpu-1",
+                "host": "192.168.1.100",
+                "status": "online",
+                "daemon": "running",
+            }
+        ]
         result = format_machine_list(machines)
         assert "🟢" in result
         assert "⚡" in result
@@ -298,24 +300,28 @@ class TestFormatMachineList:
         assert "192.168.1.100" in result
 
     def test_offline_machine(self):
-        machines = [{
-            "id": "gpu-2",
-            "host": "192.168.1.101",
-            "status": "offline",
-            "daemon": "stopped",
-        }]
+        machines = [
+            {
+                "id": "gpu-2",
+                "host": "192.168.1.101",
+                "status": "offline",
+                "daemon": "stopped",
+            }
+        ]
         result = format_machine_list(machines)
         assert "🔴" in result
         assert "💤" in result
 
     def test_machine_with_paths(self):
-        machines = [{
-            "id": "gpu-1",
-            "host": "192.168.1.100",
-            "status": "online",
-            "daemon": "running",
-            "default_paths": ["/home/user/project1", "/home/user/project2"],
-        }]
+        machines = [
+            {
+                "id": "gpu-1",
+                "host": "192.168.1.100",
+                "status": "online",
+                "daemon": "running",
+                "default_paths": ["/home/user/project1", "/home/user/project2"],
+            }
+        ]
         result = format_machine_list(machines)
         assert "Paths:" in result
         assert "`/home/user/project1`" in result
@@ -543,18 +549,20 @@ class TestFormatMonitor:
     def test_single_session_full_id(self):
         monitor = {
             "uptime": 3665,
-            "sessions": [{
-                "sessionId": "abcdef1234567890",
-                "status": "idle",
-                "mode": "auto",
-                "model": "claude-3-opus",
-                "path": "/home/user/project",
-                "queue": {
-                    "userPending": 0,
-                    "responsePending": 0,
-                    "clientConnected": True,
-                },
-            }],
+            "sessions": [
+                {
+                    "sessionId": "abcdef1234567890",
+                    "status": "idle",
+                    "mode": "auto",
+                    "model": "claude-3-opus",
+                    "path": "/home/user/project",
+                    "queue": {
+                        "userPending": 0,
+                        "responsePending": 0,
+                        "clientConnected": True,
+                    },
+                }
+            ],
         }
         result = format_monitor("gpu-1", monitor)
         assert "Monitor - gpu-1" in result
@@ -601,13 +609,15 @@ class TestFormatMonitor:
     def test_error_status_session(self):
         monitor = {
             "uptime": 10,
-            "sessions": [{
-                "sessionId": "cccc1234567890ab",
-                "status": "error",
-                "mode": "ask",
-                "path": "/err",
-                "queue": {"userPending": 0, "responsePending": 0, "clientConnected": False},
-            }],
+            "sessions": [
+                {
+                    "sessionId": "cccc1234567890ab",
+                    "status": "error",
+                    "mode": "ask",
+                    "path": "/err",
+                    "queue": {"userPending": 0, "responsePending": 0, "clientConnected": False},
+                }
+            ],
         }
         result = format_monitor("gpu-1", monitor)
         assert "✕" in result
@@ -615,13 +625,15 @@ class TestFormatMonitor:
     def test_session_no_model(self):
         monitor = {
             "uptime": 0,
-            "sessions": [{
-                "sessionId": "dddd1234567890ab",
-                "status": "idle",
-                "mode": "plan",
-                "path": "/test",
-                "queue": {"userPending": 0, "responsePending": 0, "clientConnected": True},
-            }],
+            "sessions": [
+                {
+                    "sessionId": "dddd1234567890ab",
+                    "status": "idle",
+                    "mode": "plan",
+                    "path": "/test",
+                    "queue": {"userPending": 0, "responsePending": 0, "clientConnected": True},
+                }
+            ],
         }
         result = format_monitor("gpu-1", monitor)
         assert "plan" in result
@@ -630,11 +642,39 @@ class TestFormatMonitor:
 
     def test_uptime_formats(self):
         # Seconds only
-        result = format_monitor("m1", {"sessions": [{"sessionId": "aaaa1234567890ab", "status": "idle", "mode": "auto", "path": "/t", "queue": {"userPending": 0, "responsePending": 0, "clientConnected": True}}], "uptime": 30})
+        result = format_monitor(
+            "m1",
+            {
+                "sessions": [
+                    {
+                        "sessionId": "aaaa1234567890ab",
+                        "status": "idle",
+                        "mode": "auto",
+                        "path": "/t",
+                        "queue": {"userPending": 0, "responsePending": 0, "clientConnected": True},
+                    }
+                ],
+                "uptime": 30,
+            },
+        )
         assert "30s" in result
 
         # Minutes and seconds
-        result = format_monitor("m1", {"sessions": [{"sessionId": "aaaa1234567890ab", "status": "idle", "mode": "auto", "path": "/t", "queue": {"userPending": 0, "responsePending": 0, "clientConnected": True}}], "uptime": 125})
+        result = format_monitor(
+            "m1",
+            {
+                "sessions": [
+                    {
+                        "sessionId": "aaaa1234567890ab",
+                        "status": "idle",
+                        "mode": "auto",
+                        "path": "/t",
+                        "queue": {"userPending": 0, "responsePending": 0, "clientConnected": True},
+                    }
+                ],
+                "uptime": 125,
+            },
+        )
         assert "2m05s" in result
 
 

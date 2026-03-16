@@ -1,11 +1,11 @@
 [package]
-name = "remote-code-daemon"
-version = "0.2.2"
+name = "codecast-daemon"
+version = "0.2.3"
 edition = "2021"
-description = "Remote Code daemon - manages Claude CLI sessions via JSON-RPC over HTTP"
+description = "Codecast daemon - manages Claude CLI sessions via JSON-RPC over HTTP"
 
 [[bin]]
-name = "remote-code-daemon"
+name = "codecast-daemon"
 path = "src/main.rs"
 
 [dependencies]

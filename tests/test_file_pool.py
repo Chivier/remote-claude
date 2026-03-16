@@ -342,9 +342,7 @@ class TestDownloadDiscordAttachment:
 
     @pytest.mark.asyncio
     async def test_download_success(self, pool, mock_attachment):
-        entry = await pool.download_discord_attachment(
-            mock_attachment, session_prefix="sess1234"
-        )
+        entry = await pool.download_discord_attachment(mock_attachment, session_prefix="sess1234")
         assert entry.original_name == "report.pdf"
         assert entry.size == 1024
         assert entry.mime_type == "application/pdf"

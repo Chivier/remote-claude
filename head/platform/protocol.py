@@ -65,9 +65,7 @@ class PlatformAdapter(Protocol):
         """Download a file attachment to a local path."""
         ...
 
-    async def send_file(
-        self, channel_id: str, path: Path, caption: str = ""
-    ) -> MessageHandle:
+    async def send_file(self, channel_id: str, path: Path, caption: str = "") -> MessageHandle:
         """Send a file to a channel."""
         ...
 

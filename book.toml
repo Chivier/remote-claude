@@ -1,7 +1,7 @@
 [book]
-title = "Remote Code"
-description = "Remote Code CLI control via Discord/Telegram bots"
-authors = ["Remote Code Contributors"]
+title = "Codecast"
+description = "Codecast CLI control via Discord/Telegram bots"
+authors = ["Codecast Contributors"]
 language = "en"
 src = "docs/en"
 

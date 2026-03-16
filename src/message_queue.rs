@@ -99,10 +99,7 @@ impl MessageQueue {
 
     /// Drain and return all buffered response events
     fn replay_responses(&mut self) -> Vec<StreamEvent> {
-        self.response_pending
-            .drain(..)
-            .map(|r| r.event)
-            .collect()
+        self.response_pending.drain(..).map(|r| r.event).collect()
     }
 
     // ─── Cleanup ───

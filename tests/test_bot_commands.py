@@ -128,16 +128,30 @@ def mock_router(tmp_path):
 @pytest.fixture
 def mock_daemon():
     daemon = AsyncMock(spec=DaemonClient)
-    daemon.health_check = AsyncMock(return_value={
-        "ok": True, "sessions": 0, "uptime": 100,
-        "sessionsByStatus": {}, "memory": {}, "nodeVersion": "v18", "pid": 1,
-    })
-    daemon.monitor_sessions = AsyncMock(return_value={
-        "sessions": [], "uptime": 100,
-    })
-    daemon.get_queue_stats = AsyncMock(return_value={
-        "userPending": 0, "responsePending": 0, "clientConnected": True,
-    })
+    daemon.health_check = AsyncMock(
+        return_value={
+            "ok": True,
+            "sessions": 0,
+            "uptime": 100,
+            "sessionsByStatus": {},
+            "memory": {},
+            "nodeVersion": "v18",
+            "pid": 1,
+        }
+    )
+    daemon.monitor_sessions = AsyncMock(
+        return_value={
+            "sessions": [],
+            "uptime": 100,
+        }
+    )
+    daemon.get_queue_stats = AsyncMock(
+        return_value={
+            "userPending": 0,
+            "responsePending": 0,
+            "clientConnected": True,
+        }
+    )
     daemon.set_mode = AsyncMock(return_value=True)
     daemon.create_session = AsyncMock(return_value="new-session-id-123456")
     daemon.destroy_session = AsyncMock(return_value=True)
@@ -227,12 +241,21 @@ class TestCmdHealth:
         mock_ssh.get_local_port.side_effect = lambda mid: 19100 if mid == "gpu-1" else 19101
 
         call_count = 0
+
         async def health_side_effect(port):
             nonlocal call_count
             call_count += 1
             if port == 19101:
                 raise Exception("Connection refused")
-            return {"ok": True, "sessions": 0, "uptime": 100, "sessionsByStatus": {}, "memory": {}, "nodeVersion": "v18", "pid": 1}
+            return {
+                "ok": True,
+                "sessions": 0,
+                "uptime": 100,
+                "sessionsByStatus": {},
+                "memory": {},
+                "nodeVersion": "v18",
+                "pid": 1,
+            }
 
         mock_daemon.health_check.side_effect = health_side_effect
         await bot.cmd_health("discord:100", [])
@@ -415,7 +438,7 @@ class TestHandleInput:
     async def test_command_routing_help(self, bot):
         await bot.handle_input("discord:100", "/help")
         msg = bot.get_last_message()
-        assert "Remote Code Commands" in msg
+        assert "Codecast Commands" in msg
 
     @pytest.mark.asyncio
     async def test_command_routing_status(self, bot):
@@ -469,7 +492,7 @@ class TestHandleInput:
     async def test_command_case_insensitive(self, bot):
         await bot.handle_input("discord:100", "/HELP")
         msg = bot.get_last_message()
-        assert "Remote Code Commands" in msg
+        assert "Codecast Commands" in msg
 
     @pytest.mark.asyncio
     async def test_command_routing_mode(self, bot):

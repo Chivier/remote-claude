@@ -78,10 +78,7 @@ async fn handle_rpc(
 
 // ─── Method Handlers ───
 
-async fn handle_create_session(
-    state: &AppState,
-    req: &RpcRequest,
-) -> Result<RpcResponse, String> {
+async fn handle_create_session(state: &AppState, req: &RpcRequest) -> Result<RpcResponse, String> {
     let params = req.params.as_ref().ok_or("Missing params")?;
     let path = params
         .get("path")
@@ -114,10 +111,7 @@ async fn handle_create_session(
     ))
 }
 
-async fn handle_send_message(
-    state: Arc<AppState>,
-    req: &RpcRequest,
-) -> axum::response::Response {
+async fn handle_send_message(state: Arc<AppState>, req: &RpcRequest) -> axum::response::Response {
     let params = match req.params.as_ref() {
         Some(p) => p,
         None => {
@@ -159,8 +153,7 @@ async fn handle_send_message(
         Ok(rx) => rx,
         Err(e) => {
             // Return error as SSE (matches TypeScript behavior)
-            let (tx, rx) =
-                tokio::sync::mpsc::channel::<Result<Event, std::convert::Infallible>>(2);
+            let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, std::convert::Infallible>>(2);
             let _ = tx
                 .send(Ok(Event::default().data(
                     serde_json::to_string(&json!({"type": "error", "message": e})).unwrap(),
@@ -192,8 +185,7 @@ async fn handle_send_message(
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
             loop {
                 interval.tick().await;
-                let ping_data =
-                    serde_json::to_string(&json!({"type": "ping"})).unwrap();
+                let ping_data = serde_json::to_string(&json!({"type": "ping"})).unwrap();
                 if sse_tx_for_ping
                     .send(Ok(Event::default().data(ping_data)))
                     .await
@@ -214,8 +206,7 @@ async fn handle_send_message(
                 continue;
             }
 
-            let data =
-                serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string());
+            let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string());
             if sse_tx.send(Ok(Event::default().data(data))).await.is_err() {
                 // Client disconnected — mark and buffer this event
                 client_disconnected = true;
@@ -254,21 +245,16 @@ where
 {
     let mut response = sse.into_response();
     // Disable nginx buffering — critical for SSE streaming through reverse proxies
-    response.headers_mut().insert(
-        "X-Accel-Buffering",
-        HeaderValue::from_static("no"),
-    );
-    response.headers_mut().insert(
-        "Cache-Control",
-        HeaderValue::from_static("no-cache"),
-    );
+    response
+        .headers_mut()
+        .insert("X-Accel-Buffering", HeaderValue::from_static("no"));
+    response
+        .headers_mut()
+        .insert("Cache-Control", HeaderValue::from_static("no-cache"));
     response
 }
 
-async fn handle_resume_session(
-    state: &AppState,
-    req: &RpcRequest,
-) -> Result<RpcResponse, String> {
+async fn handle_resume_session(state: &AppState, req: &RpcRequest) -> Result<RpcResponse, String> {
     let params = req.params.as_ref().ok_or("Missing params")?;
     let session_id = params
         .get("sessionId")
@@ -280,18 +266,12 @@ async fn handle_resume_session(
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let result = state
-        .session_pool
-        .resume(session_id, sdk_session_id)
-        .await;
+    let result = state.session_pool.resume(session_id, sdk_session_id).await;
 
     Ok(RpcResponse::success(result, req.id.clone()))
 }
 
-async fn handle_destroy_session(
-    state: &AppState,
-    req: &RpcRequest,
-) -> Result<RpcResponse, String> {
+async fn handle_destroy_session(state: &AppState, req: &RpcRequest) -> Result<RpcResponse, String> {
     let params = req.params.as_ref().ok_or("Missing params")?;
     let session_id = params
         .get("sessionId")
@@ -302,10 +282,7 @@ async fn handle_destroy_session(
     Ok(RpcResponse::success(json!({ "ok": ok }), req.id.clone()))
 }
 
-async fn handle_list_sessions(
-    state: &AppState,
-    req: &RpcRequest,
-) -> Result<RpcResponse, String> {
+async fn handle_list_sessions(state: &AppState, req: &RpcRequest) -> Result<RpcResponse, String> {
     let sessions = state.session_pool.list_sessions().await;
     Ok(RpcResponse::success(
         json!({ "sessions": sessions }),
@@ -387,7 +364,7 @@ async fn handle_health_check(state: &AppState, req: &RpcRequest) -> Result<RpcRe
     let mut status_counts: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
     for s in &sessions {
-        let status_str = serde_json::to_value(&s.status)
+        let status_str = serde_json::to_value(s.status)
             .ok()
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or_else(|| "unknown".to_string());

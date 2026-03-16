@@ -190,9 +190,7 @@ class TelegramAdapter:
 
     # --- File Operations ---
 
-    async def download_file(
-        self, attachment: FileAttachment, dest: Path
-    ) -> Path:
+    async def download_file(self, attachment: FileAttachment, dest: Path) -> Path:
         """Download a Telegram file attachment to local path."""
         if not self._bot:
             raise RuntimeError("Telegram bot not initialized")
@@ -200,7 +198,7 @@ class TelegramAdapter:
         if attachment.size > TELEGRAM_FILE_SIZE_LIMIT:
             raise ValueError(
                 f"File {attachment.filename} ({attachment.size} bytes) exceeds "
-                f"Telegram's {TELEGRAM_FILE_SIZE_LIMIT // (1024*1024)}MB limit"
+                f"Telegram's {TELEGRAM_FILE_SIZE_LIMIT // (1024 * 1024)}MB limit"
             )
 
         # platform_ref should be a telegram File object
@@ -212,9 +210,7 @@ class TelegramAdapter:
         await tg_file.download_to_drive(str(dest))
         return dest
 
-    async def send_file(
-        self, channel_id: str, path: Path, caption: str = ""
-    ) -> MessageHandle:
+    async def send_file(self, channel_id: str, path: Path, caption: str = "") -> MessageHandle:
         """Send a file to a Telegram chat."""
         if not self._bot:
             raise RuntimeError("Telegram bot not initialized")
@@ -249,6 +245,7 @@ class TelegramAdapter:
                 while True:
                     try:
                         from telegram.constants import ChatAction
+
                         await self._bot.send_chat_action(chat_id, ChatAction.TYPING)
                     except Exception:
                         pass
@@ -296,9 +293,7 @@ class TelegramAdapter:
         """Start the Telegram bot."""
         token = self._config.token
         if not token:
-            raise ValueError(
-                "Telegram token is empty. Set TELEGRAM_TOKEN environment variable."
-            )
+            raise ValueError("Telegram token is empty. Set TELEGRAM_TOKEN environment variable.")
 
         logger.info("Starting Telegram bot...")
 
@@ -307,16 +302,30 @@ class TelegramAdapter:
 
         # Register command handlers
         command_names = [
-            "start", "resume", "new", "clear",
-            "ls", "list", "exit", "rm", "remove",
-            "destroy", "mode", "status", "rename", "interrupt",
-            "health", "monitor", "help",
-            "add_machine", "remove_machine", "update", "restart",
+            "start",
+            "resume",
+            "new",
+            "clear",
+            "ls",
+            "list",
+            "exit",
+            "rm",
+            "remove",
+            "destroy",
+            "mode",
+            "status",
+            "rename",
+            "interrupt",
+            "health",
+            "monitor",
+            "help",
+            "add_machine",
+            "remove_machine",
+            "update",
+            "restart",
         ]
         for cmd in command_names:
-            self._app.add_handler(
-                CommandHandler(cmd, self._handle_telegram_command)
-            )
+            self._app.add_handler(CommandHandler(cmd, self._handle_telegram_command))
 
         # Register message handler (non-command messages)
         self._app.add_handler(
@@ -328,20 +337,22 @@ class TelegramAdapter:
 
         # Register command menu
         try:
-            await self._bot.set_my_commands([
-                BotCommand("start", "Start a new Claude session"),
-                BotCommand("resume", "Resume a previous session"),
-                BotCommand("new", "New session in same directory"),
-                BotCommand("clear", "Clear context and restart session"),
-                BotCommand("ls", "List machines or sessions"),
-                BotCommand("exit", "Detach from current session"),
-                BotCommand("mode", "Switch permission mode"),
-                BotCommand("status", "Show current session info"),
-                BotCommand("interrupt", "Interrupt Claude"),
-                BotCommand("rename", "Rename current session"),
-                BotCommand("health", "Check daemon health"),
-                BotCommand("help", "Show available commands"),
-            ])
+            await self._bot.set_my_commands(
+                [
+                    BotCommand("start", "Start a new Claude session"),
+                    BotCommand("resume", "Resume a previous session"),
+                    BotCommand("new", "New session in same directory"),
+                    BotCommand("clear", "Clear context and restart session"),
+                    BotCommand("ls", "List machines or sessions"),
+                    BotCommand("exit", "Detach from current session"),
+                    BotCommand("mode", "Switch permission mode"),
+                    BotCommand("status", "Show current session info"),
+                    BotCommand("interrupt", "Interrupt Claude"),
+                    BotCommand("rename", "Rename current session"),
+                    BotCommand("health", "Check daemon health"),
+                    BotCommand("help", "Show available commands"),
+                ]
+            )
         except Exception as e:
             logger.warning(f"Failed to set Telegram bot commands: {e}")
 
@@ -358,7 +369,7 @@ class TelegramAdapter:
 
     async def stop(self) -> None:
         """Stop the Telegram bot."""
-        if hasattr(self, '_stop_event'):
+        if hasattr(self, "_stop_event"):
             self._stop_event.set()
         if self._app:
             logger.info("Stopping Telegram bot...")
@@ -404,9 +415,7 @@ class TelegramAdapter:
             return f"{cmd} {rest}".strip() if rest else cmd
         return text
 
-    async def _handle_telegram_message(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
+    async def _handle_telegram_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming Telegram messages."""
         if not update.message or not update.message.text:
             return
@@ -428,9 +437,7 @@ class TelegramAdapter:
         if self._on_input:
             await self._on_input(channel_id, text, user.id, None)
 
-    async def _handle_telegram_command(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ) -> None:
+    async def _handle_telegram_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle Telegram slash commands."""
         if not update.message or not update.message.text:
             return

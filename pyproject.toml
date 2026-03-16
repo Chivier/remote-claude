@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=68.0", "setuptools-rust>=1.10"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "remote-code"
-version = "0.2.2"
+name = "codecast"
+version = "0.2.3"
 description = "Bot-based system to interact with Claude CLI on remote machines"
 readme = "README.md"
 license = "MIT"
@@ -31,18 +31,22 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Chivier/remote-code"
-Repository = "https://github.com/Chivier/remote-code"
-Issues = "https://github.com/Chivier/remote-code/issues"
+Homepage = "https://github.com/Chivier/codecast"
+Repository = "https://github.com/Chivier/codecast"
+Issues = "https://github.com/Chivier/codecast/issues"
 
 [project.scripts]
-remote-code = "head.main:cli_main"
+codecast = "head.main:cli_main"
 
 [tool.setuptools.packages.find]
 include = ["head*"]
 
 [tool.setuptools.package-data]
-"head.bin" = ["remote-code-daemon-*"]
+"head.bin" = ["codecast-daemon-*"]
+
+[[tool.setuptools-rust.bins]]
+target = "codecast-daemon"
+args = ["--profile", "release"]
 
 [tool.ruff]
 target-version = "py311"

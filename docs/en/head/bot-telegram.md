@@ -6,7 +6,7 @@ Telegram bot implementation using python-telegram-bot v20+ with async handlers.
 
 ## Purpose
 
-- Implement the Telegram-specific platform layer for Remote Code
+- Implement the Telegram-specific platform layer for Codecast
 - Register command and message handlers
 - Handle user-based access control
 - Support Telegram's 4096-character message limit

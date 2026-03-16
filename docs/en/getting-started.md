@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide walks you through setting up Remote Code from scratch.
+This guide walks you through setting up Codecast from scratch.
 
 ## Prerequisites
 
@@ -41,7 +41,7 @@ This guide walks you through setting up Remote Code from scratch.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/Chivier/remote-code.git
+git clone https://github.com/Chivier/codecast.git
 cd remote-code
 ```
 
@@ -58,13 +58,13 @@ This installs:
 - `discord.py` -- Discord bot framework
 - `python-telegram-bot` -- Telegram bot framework
 
-Alternatively, install the package in editable mode to also get the `remote-code` CLI command:
+Alternatively, install the package in editable mode to also get the `codecast` CLI command:
 
 ```bash
 pip install -e .
 ```
 
-With `pip install -e .`, you can run `remote-code` directly from your terminal instead of `python -m head.main`. Both approaches install the same dependencies.
+With `pip install -e .`, you can run `codecast` directly from your terminal instead of `python -m head.main`. Both approaches install the same dependencies.
 
 ### 3. Build the Daemon (Optional)
 
@@ -146,11 +146,11 @@ python -m head.main /path/to/config.yaml
 You should see output like:
 
 ```
-2026-03-14 10:00:00 [remote-code] INFO: Discord bot configured
-2026-03-14 10:00:00 [remote-code] INFO: Telegram bot configured
-2026-03-14 10:00:00 [remote-code] INFO: Remote Code started with 2 bot(s)
-2026-03-14 10:00:00 [remote-code] INFO: Machines: gpu-1
-2026-03-14 10:00:00 [remote-code] INFO: Default mode: auto
+2026-03-14 10:00:00 [codecast] INFO: Discord bot configured
+2026-03-14 10:00:00 [codecast] INFO: Telegram bot configured
+2026-03-14 10:00:00 [codecast] INFO: Codecast started with 2 bot(s)
+2026-03-14 10:00:00 [codecast] INFO: Machines: gpu-1
+2026-03-14 10:00:00 [codecast] INFO: Default mode: auto
 ```
 
 ## First Session

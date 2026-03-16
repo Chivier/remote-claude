@@ -127,7 +127,7 @@ def mock_config():
     config.machines = {
         "gpu-1": MachineConfig(id="gpu-1", host="10.0.0.1", user="user"),
     }
-    config.file_pool = FilePoolConfig(remote_dir="/tmp/remote-code/files")
+    config.file_pool = FilePoolConfig(remote_dir="/tmp/codecast/files")
     return config
 
 
@@ -157,9 +157,7 @@ def file_entry(tmp_path):
 @pytest.fixture
 def registered_session(bot, mock_router):
     """Register a session for testing."""
-    mock_router.register(
-        "chan-1", "gpu-1", "/home/user/project", "daemon-sess-123", "auto"
-    )
+    mock_router.register("chan-1", "gpu-1", "/home/user/project", "daemon-sess-123", "auto")
     return mock_router.resolve("chan-1")
 
 
@@ -184,14 +182,14 @@ class TestUploadAndReplaceFiles:
 
     @pytest.mark.asyncio
     async def test_single_file_replacement(self, bot, mock_ssh, file_entry):
-        mock_ssh.upload_files = AsyncMock(return_value={
-            "sess1234_abcd5678": "/tmp/remote-code/files/sess1234_abcd5678_report.pdf"
-        })
+        mock_ssh.upload_files = AsyncMock(
+            return_value={"sess1234_abcd5678": "/tmp/codecast/files/sess1234_abcd5678_report.pdf"}
+        )
 
         text = "Analyze this <discord_file>sess1234_abcd5678</discord_file>"
         result = await bot._upload_and_replace_files("gpu-1", text, [file_entry])
 
-        assert result == "Analyze this /tmp/remote-code/files/sess1234_abcd5678_report.pdf"
+        assert result == "Analyze this /tmp/codecast/files/sess1234_abcd5678_report.pdf"
         mock_ssh.upload_files.assert_called_once_with("gpu-1", [file_entry])
 
     @pytest.mark.asyncio
@@ -206,10 +204,12 @@ class TestUploadAndReplaceFiles:
             FileEntry("id_2", "img.png", f2, 1, "image/png", 1001.0),
         ]
 
-        mock_ssh.upload_files = AsyncMock(return_value={
-            "id_1": "/tmp/files/id_1_doc1.pdf",
-            "id_2": "/tmp/files/id_2_img.png",
-        })
+        mock_ssh.upload_files = AsyncMock(
+            return_value={
+                "id_1": "/tmp/files/id_1_doc1.pdf",
+                "id_2": "/tmp/files/id_2_img.png",
+            }
+        )
 
         text = "Look at <discord_file>id_1</discord_file> and <discord_file>id_2</discord_file>"
         result = await bot._upload_and_replace_files("gpu-1", text, entries)
@@ -236,9 +236,9 @@ class TestForwardMessageWithFiles:
         self, bot, mock_ssh, mock_daemon, registered_session, file_entry
     ):
         """Files should be uploaded and text replaced before sending to daemon."""
-        mock_ssh.upload_files = AsyncMock(return_value={
-            "sess1234_abcd5678": "/tmp/remote/sess1234_abcd5678_report.pdf"
-        })
+        mock_ssh.upload_files = AsyncMock(
+            return_value={"sess1234_abcd5678": "/tmp/remote/sess1234_abcd5678_report.pdf"}
+        )
 
         # Make send_message return an empty async iterator
         async def empty_stream(*args, **kwargs):
@@ -261,9 +261,7 @@ class TestForwardMessageWithFiles:
         assert "<discord_file>" not in sent_text or "report.pdf" in sent_text
 
     @pytest.mark.asyncio
-    async def test_forward_upload_failure_sends_error(
-        self, bot, mock_ssh, mock_daemon, registered_session, file_entry
-    ):
+    async def test_forward_upload_failure_sends_error(self, bot, mock_ssh, mock_daemon, registered_session, file_entry):
         """If file upload fails, error message should be sent and message NOT forwarded."""
         mock_ssh.upload_files = AsyncMock(side_effect=Exception("SSH connection lost"))
 
@@ -280,10 +278,9 @@ class TestForwardMessageWithFiles:
         mock_daemon.send_message.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_forward_without_files_works_normally(
-        self, bot, mock_ssh, mock_daemon, registered_session
-    ):
+    async def test_forward_without_files_works_normally(self, bot, mock_ssh, mock_daemon, registered_session):
         """Normal text forwarding (no files) should still work."""
+
         async def empty_stream(*args, **kwargs):
             return
             yield

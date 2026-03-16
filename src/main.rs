@@ -77,7 +77,7 @@ async fn main() {
 
     // Write actual port to file so the head node can discover it
     if let Some(home) = dirs::home_dir() {
-        let port_file = home.join(".remote-code").join("daemon.port");
+        let port_file = home.join(".codecast").join("daemon.port");
         if let Some(parent) = port_file.parent() {
             std::fs::create_dir_all(parent).ok();
         }
@@ -88,7 +88,7 @@ async fn main() {
     println!("DAEMON_PORT={}", actual_port);
 
     info!(
-        "[Daemon] Remote Code Daemon listening on {}:{}",
+        "[Daemon] Codecast Daemon listening on {}:{}",
         host, actual_port
     );
 

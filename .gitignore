@@ -33,7 +33,7 @@ target/
 *.egg-info/
 
 # Bundled daemon binaries (placed by CI)
-head/bin/remote-code-daemon-*
+head/bin/codecast-daemon-*
 
 # OS
 .DS_Store

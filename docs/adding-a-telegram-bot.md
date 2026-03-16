@@ -1,6 +1,6 @@
 # Adding a Telegram Bot
 
-This guide walks you through creating a Telegram bot and wiring it into Remote Code.
+This guide walks you through creating a Telegram bot and wiring it into Codecast.
 
 ---
 
@@ -8,7 +8,7 @@ This guide walks you through creating a Telegram bot and wiring it into Remote C
 
 1. Open Telegram and search for [@BotFather](https://t.me/BotFather).
 2. Send `/newbot`.
-3. Choose a **display name** (e.g. `Remote Code`).
+3. Choose a **display name** (e.g. `Codecast`).
 4. Choose a **username** ending in `bot` (e.g. `MyRemoteCodeBot`).
 5. BotFather will reply with a **token** like `123456789:ABCdefGHI...`. **Copy this token**.
 
@@ -26,7 +26,7 @@ Alternatively, send a message to your new bot and check the logs — the user ID
 
 ---
 
-## Step 3: Configure Remote Code
+## Step 3: Configure Codecast
 
 Open `config.yaml` and add (or update) the `bot.telegram` section:
 
@@ -74,7 +74,7 @@ Watch the logs:
 INFO: Telegram bot configured
 INFO: Starting Telegram bot...
 INFO: Telegram bot started
-INFO: Remote Code started with 1 bot(s)
+INFO: Codecast started with 1 bot(s)
 ```
 
 The bot registers a command menu automatically — you should see commands like `/start`, `/help`, `/ls`, etc. in the Telegram command picker.
@@ -95,7 +95,7 @@ Start your first session:
 
 ## Running Discord and Telegram Together
 
-Remote Code supports running both bots simultaneously. Configure both sections in `config.yaml`:
+Codecast supports running both bots simultaneously. Configure both sections in `config.yaml`:
 
 ```yaml
 bot:

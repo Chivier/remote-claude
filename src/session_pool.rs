@@ -56,7 +56,10 @@ impl SessionPool {
 
         // Validate path exists on the remote machine
         if !Path::new(&expanded_path).exists() {
-            return Err(format!("Path does not exist on remote machine: {}", expanded_path));
+            return Err(format!(
+                "Path does not exist on remote machine: {}",
+                expanded_path
+            ));
         }
 
         let session_id = Uuid::new_v4().to_string();
@@ -81,7 +84,10 @@ impl SessionPool {
             model: None,
         };
 
-        self.sessions.lock().await.insert(session_id.clone(), session);
+        self.sessions
+            .lock()
+            .await
+            .insert(session_id.clone(), session);
         Ok(session_id)
     }
 
@@ -494,12 +500,9 @@ async fn run_claude_process(
         if let Some(session) = sessions_guard.get_mut(session_id) {
             if let Some(ref mut child) = session.process {
                 // Check if process is still alive by trying wait with timeout 0
-                match child.try_wait() {
-                    Ok(None) => {
-                        // Still alive — send SIGTERM, then SIGKILL after 3s
-                        send_sigterm_then_sigkill(child, 3000).await;
-                    }
-                    _ => {} // Already exited or error
+                if let Ok(None) = child.try_wait() {
+                    // Still alive — send SIGTERM, then SIGKILL after 3s
+                    send_sigterm_then_sigkill(child, 3000).await;
                 }
             }
         }

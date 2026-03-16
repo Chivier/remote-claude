@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Session:
     """Represents an active or detached session."""
+
     channel_id: str
     machine_id: str
     path: str
@@ -235,9 +236,17 @@ class SessionRouter:
             """INSERT INTO session_log
                (channel_id, machine_id, path, daemon_session_id, sdk_session_id, mode, created_at, detached_at, name)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (session.channel_id, session.machine_id, session.path,
-             session.daemon_session_id, session.sdk_session_id, session.mode,
-             session.created_at, now, session.name),
+            (
+                session.channel_id,
+                session.machine_id,
+                session.path,
+                session.daemon_session_id,
+                session.sdk_session_id,
+                session.mode,
+                session.created_at,
+                now,
+                session.name,
+            ),
         )
 
         # Update status
@@ -284,9 +293,7 @@ class SessionRouter:
                     (machine_id,),
                 )
             else:
-                cursor = conn.execute(
-                    "SELECT * FROM sessions ORDER BY updated_at DESC"
-                )
+                cursor = conn.execute("SELECT * FROM sessions ORDER BY updated_at DESC")
             return [self._row_to_session(row) for row in cursor.fetchall()]
         finally:
             conn.close()
@@ -295,9 +302,7 @@ class SessionRouter:
         """List only active sessions."""
         conn = self._connect()
         try:
-            cursor = conn.execute(
-                "SELECT * FROM sessions WHERE status = 'active' ORDER BY updated_at DESC"
-            )
+            cursor = conn.execute("SELECT * FROM sessions WHERE status = 'active' ORDER BY updated_at DESC")
             return [self._row_to_session(row) for row in cursor.fetchall()]
         finally:
             conn.close()

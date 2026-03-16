@@ -133,6 +133,7 @@ def mock_daemon():
 @pytest.fixture
 def make_config():
     """Factory that creates a Config with a given tool_batch_size."""
+
     def _make(tool_batch_size: int = 15):
         config = Config()
         config.machines = {
@@ -141,18 +142,21 @@ def make_config():
         config.default_mode = "auto"
         config.tool_batch_size = tool_batch_size
         return config
+
     return _make
 
 
 @pytest.fixture
 def make_bot(mock_ssh, mock_router, mock_daemon, make_config):
     """Factory that creates a MockBotEngine with a given tool_batch_size."""
+
     def _make(tool_batch_size: int = 15):
         config = make_config(tool_batch_size)
         adapter = MockAdapter()
         engine = MockBotEngine(adapter, mock_ssh, mock_router, mock_daemon, config)
         adapter.set_input_handler(engine.handle_input)
         return engine
+
     return _make
 
 

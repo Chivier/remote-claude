@@ -1,5 +1,5 @@
 """
-Shared fixtures for Remote Code tests.
+Shared fixtures for Codecast tests.
 """
 
 import pytest

@@ -6,21 +6,75 @@ on:
 
 permissions:
   contents: write
+  id-token: write  # Required for PyPI Trusted Publishers (OIDC)
 
 jobs:
+  build-wheels:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64
+          - os: macos-latest
+            target: aarch64
+          - os: windows-latest
+            target: x64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheel
+        run: |
+          pip install build setuptools setuptools-rust
+          python -m build --wheel
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}
+          path: dist/*.whl
+
+  build-sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build sdist
+        run: |
+          pip install build setuptools setuptools-rust
+          python -m build --sdist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  # Also build standalone daemon binaries for GitHub Release downloads
   build-daemon:
     strategy:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
-            binary: remote-code-daemon-linux-x64
+            binary: codecast-daemon-linux-x64
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
-            binary: remote-code-daemon-windows-x64.exe
+            binary: codecast-daemon-windows-x64.exe
           - target: aarch64-apple-darwin
             runner: macos-latest
-            binary: remote-code-daemon-macos-arm64
+            binary: codecast-daemon-macos-arm64
 
     runs-on: ${{ matrix.runner }}
     steps:
@@ -39,55 +93,59 @@ jobs:
 
       - name: Rename binary (Unix)
         if: runner.os != 'Windows'
-        run: cp target/${{ matrix.target }}/release/remote-code-daemon ${{ matrix.binary }}
+        run: cp target/${{ matrix.target }}/release/codecast-daemon ${{ matrix.binary }}
 
       - name: Rename binary (Windows)
         if: runner.os == 'Windows'
-        run: cp target/${{ matrix.target }}/release/remote-code-daemon.exe ${{ matrix.binary }}
+        run: cp target/${{ matrix.target }}/release/codecast-daemon.exe ${{ matrix.binary }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.binary }}
           path: ${{ matrix.binary }}
 
-  publish:
-    needs: build-daemon
+  github-release:
+    needs: [build-wheels, build-sdist, build-daemon]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
           path: artifacts/
 
-      - name: Place binaries into head/bin/
+      - name: Collect daemon binaries
         run: |
-          mkdir -p head/bin/
-          cp artifacts/remote-code-daemon-linux-x64/remote-code-daemon-linux-x64 head/bin/
-          cp artifacts/remote-code-daemon-windows-x64.exe/remote-code-daemon-windows-x64.exe head/bin/
-          cp artifacts/remote-code-daemon-macos-arm64/remote-code-daemon-macos-arm64 head/bin/
-          chmod +x head/bin/remote-code-daemon-*
-          ls -la head/bin/
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Build Python package
-        run: |
-          pip install build
-          python -m build
+          mkdir -p daemon-binaries/
+          cp artifacts/codecast-daemon-linux-x64/codecast-daemon-linux-x64 daemon-binaries/
+          cp artifacts/codecast-daemon-windows-x64.exe/codecast-daemon-windows-x64.exe daemon-binaries/
+          cp artifacts/codecast-daemon-macos-arm64/codecast-daemon-macos-arm64 daemon-binaries/
+          chmod +x daemon-binaries/codecast-daemon-*
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            head/bin/remote-code-daemon-linux-x64
-            head/bin/remote-code-daemon-windows-x64.exe
-            head/bin/remote-code-daemon-macos-arm64
+            daemon-binaries/codecast-daemon-linux-x64
+            daemon-binaries/codecast-daemon-windows-x64.exe
+            daemon-binaries/codecast-daemon-macos-arm64
           generate_release_notes: true
+
+  pypi-publish:
+    needs: [build-wheels, build-sdist]
+    runs-on: ubuntu-latest
+    environment: pypi  # Must match the environment name configured on PyPI
+    permissions:
+      id-token: write  # Required for OIDC Trusted Publisher
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Collect dist files
+        run: |
+          mkdir -p dist/
+          cp artifacts/wheel-*/*.whl dist/
+          cp artifacts/sdist/*.tar.gz dist/
+          ls -la dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}

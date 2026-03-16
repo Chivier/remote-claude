@@ -45,6 +45,7 @@ class MockSSEResponse:
         async def aiter():
             for line in self._lines:
                 yield (line + "\n").encode("utf-8")
+
         return aiter()
 
     async def __aenter__(self):
@@ -77,9 +78,7 @@ class TestRpcCall:
 
     @pytest.mark.asyncio
     async def test_error_response(self, client):
-        mock_resp = MockResponse({
-            "error": {"message": "Session not found", "code": 404}
-        })
+        mock_resp = MockResponse({"error": {"message": "Session not found", "code": 404}})
         with patch.object(aiohttp.ClientSession, "post", return_value=mock_resp):
             client._session = aiohttp.ClientSession()
             try:
@@ -90,9 +89,7 @@ class TestRpcCall:
 
     @pytest.mark.asyncio
     async def test_error_code_preserved(self, client):
-        mock_resp = MockResponse({
-            "error": {"message": "Not found", "code": 404}
-        })
+        mock_resp = MockResponse({"error": {"message": "Not found", "code": 404}})
         with patch.object(aiohttp.ClientSession, "post", return_value=mock_resp):
             client._session = aiohttp.ClientSession()
             try:
@@ -219,10 +216,16 @@ class TestSessionManagement:
 
     @pytest.mark.asyncio
     async def test_list_sessions(self, client):
-        mock_resp = MockResponse({"result": {"sessions": [
-            {"sessionId": "s1", "status": "idle"},
-            {"sessionId": "s2", "status": "busy"},
-        ]}})
+        mock_resp = MockResponse(
+            {
+                "result": {
+                    "sessions": [
+                        {"sessionId": "s1", "status": "idle"},
+                        {"sessionId": "s2", "status": "busy"},
+                    ]
+                }
+            }
+        )
         with patch.object(aiohttp.ClientSession, "post", return_value=mock_resp):
             client._session = aiohttp.ClientSession()
             try:

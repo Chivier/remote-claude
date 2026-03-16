@@ -58,9 +58,10 @@ pub enum SessionStatus {
     Destroyed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PermissionMode {
+    #[default]
     Auto,
     Code,
     Plan,
@@ -76,12 +77,6 @@ impl PermissionMode {
             PermissionMode::Plan => vec![],
             PermissionMode::Ask => vec![],
         }
-    }
-}
-
-impl Default for PermissionMode {
-    fn default() -> Self {
-        PermissionMode::Auto
     }
 }
 
@@ -190,7 +185,10 @@ pub fn convert_claude_message(msg: &Value) -> StreamEvent {
 
     match msg_type {
         "system" => StreamEvent::System {
-            subtype: msg.get("subtype").and_then(|v| v.as_str()).map(String::from),
+            subtype: msg
+                .get("subtype")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             session_id: msg
                 .get("session_id")
                 .and_then(|v| v.as_str())
@@ -200,7 +198,11 @@ pub fn convert_claude_message(msg: &Value) -> StreamEvent {
         },
 
         "assistant" => {
-            if let Some(content) = msg.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_array()) {
+            if let Some(content) = msg
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_array())
+            {
                 // Check for tool_use blocks first
                 let tool_blocks: Vec<&Value> = content
                     .iter()
@@ -291,10 +293,7 @@ pub fn convert_claude_message(msg: &Value) -> StreamEvent {
                 .and_then(|v| v.as_str())
                 .map(String::from),
             input: None,
-            message: msg
-                .get("status")
-                .and_then(|v| v.as_str())
-                .map(String::from),
+            message: msg.get("status").and_then(|v| v.as_str()).map(String::from),
             raw: Some(msg.clone()),
         },
 

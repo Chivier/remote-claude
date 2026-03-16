@@ -22,7 +22,7 @@ impl SkillManager {
     pub fn new() -> Self {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
         Self {
-            skills_source_dir: home.join(".remote-code").join("skills"),
+            skills_source_dir: home.join(".codecast").join("skills"),
         }
     }
 
@@ -71,7 +71,12 @@ impl SkillManager {
             }
 
             // Copy each skill file, skip if already exists
-            self.copy_dir_recursive(&source_skills_dir, &target_skills_dir, &mut synced, &mut skipped);
+            self.copy_dir_recursive(
+                &source_skills_dir,
+                &target_skills_dir,
+                &mut synced,
+                &mut skipped,
+            );
         }
 
         info!(

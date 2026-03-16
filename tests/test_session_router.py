@@ -409,6 +409,7 @@ class TestSchemaMigration:
     def test_existing_db_without_name_column(self, tmp_path):
         """Test that old databases without 'name' column get migrated."""
         import sqlite3
+
         db_path = str(tmp_path / "old.db")
 
         # Create old-schema DB

@@ -264,9 +264,7 @@ class DiscordAdapter:
                 dest.write_bytes(await resp.read())
         return dest
 
-    async def send_file(
-        self, channel_id: str, path: Path, caption: str = ""
-    ) -> MessageHandle:
+    async def send_file(self, channel_id: str, path: Path, caption: str = "") -> MessageHandle:
         """Send a file to a Discord channel."""
         channel = self._channels.get(channel_id)
         if not channel:
@@ -425,9 +423,7 @@ class DiscordAdapter:
                             pass
                         continue
                     try:
-                        entry = await self.file_pool.download_discord_attachment(
-                            att, session_prefix=session_prefix
-                        )
+                        entry = await self.file_pool.download_discord_attachment(att, session_prefix=session_prefix)
                         file_refs.append(entry)
                         # Also build a FileAttachment for the protocol callback
                         platform_attachments.append(
@@ -442,9 +438,7 @@ class DiscordAdapter:
                     except Exception as e:
                         logger.warning(f"Failed to download attachment {att.filename}: {e}")
                         try:
-                            await message.channel.send(
-                                f"Failed to download `{att.filename}`: {e}"
-                            )
+                            await message.channel.send(f"Failed to download `{att.filename}`: {e}")
                         except Exception:
                             pass
 
@@ -517,9 +511,7 @@ class DiscordAdapter:
     # Internal: heartbeat
     # -----------------------------------------------------------------------
 
-    async def _heartbeat_loop(
-        self, channel_id: str, start_time: float, event_tracker: dict
-    ) -> None:
+    async def _heartbeat_loop(self, channel_id: str, start_time: float, event_tracker: dict) -> None:
         """
         Send periodic status updates every HEARTBEAT_INTERVAL seconds to avoid
         Discord's 3-minute inactivity feeling.
@@ -588,9 +580,7 @@ class DiscordAdapter:
     # Internal: message forwarding with heartbeat (Discord-specific)
     # -----------------------------------------------------------------------
 
-    async def _forward_message_with_heartbeat(
-        self, channel_id: str, text: str, file_refs: list | None = None
-    ) -> None:
+    async def _forward_message_with_heartbeat(self, channel_id: str, text: str, file_refs: list | None = None) -> None:
         """
         Forward a user message to Claude with typing indicator, heartbeat, and
         optional file upload.
@@ -628,9 +618,7 @@ class DiscordAdapter:
         }
 
         await self._start_typing(channel_id)
-        heartbeat_task = asyncio.create_task(
-            self._heartbeat_loop(channel_id, time.time(), event_tracker)
-        )
+        heartbeat_task = asyncio.create_task(self._heartbeat_loop(channel_id, time.time(), event_tracker))
 
         try:
             from head.daemon_client import DaemonConnectionError
@@ -640,13 +628,9 @@ class DiscordAdapter:
             # Upload files and replace markers before sending to Claude
             if file_refs:
                 try:
-                    text = await engine._upload_and_replace_files(
-                        session.machine_id, text, file_refs
-                    )
+                    text = await engine._upload_and_replace_files(session.machine_id, text, file_refs)
                 except Exception as e:
-                    await self.send_message(
-                        channel_id, format_error(f"File upload failed: {e}")
-                    )
+                    await self.send_message(channel_id, format_error(f"File upload failed: {e}"))
                     return
 
             buffer = ""
@@ -655,9 +639,7 @@ class DiscordAdapter:
             tool_batch: list[dict] = []
             tool_batch_size = engine.config.tool_batch_size
 
-            async for event in engine.daemon.send_message(
-                local_port, session.daemon_session_id, text
-            ):
+            async for event in engine.daemon.send_message(local_port, session.daemon_session_id, text):
                 event_type = event.get("type", "")
                 event_tracker["last_event_type"] = event_type
 
@@ -679,9 +661,7 @@ class DiscordAdapter:
 
                         if now - last_update >= STREAM_UPDATE_INTERVAL:
                             if current_handle is None:
-                                current_handle = await self.send_message(
-                                    channel_id, buffer + " \u258c"
-                                )
+                                current_handle = await self.send_message(channel_id, buffer + " \u258c")
                             else:
                                 if len(buffer) > STREAM_BUFFER_FLUSH_SIZE:
                                     await self.edit_message(current_handle, buffer)
@@ -689,9 +669,7 @@ class DiscordAdapter:
                                     event_tracker["partial_len"] = 0
                                     current_handle = None
                                 else:
-                                    await self.edit_message(
-                                        current_handle, buffer + " \u258c"
-                                    )
+                                    await self.edit_message(current_handle, buffer + " \u258c")
                             last_update = now
 
                 elif event_type == "text":
@@ -725,16 +703,10 @@ class DiscordAdapter:
                     if model and event.get("subtype") == "init":
                         # Re-resolve session (may have been updated)
                         current_session = engine.router.resolve(channel_id)
-                        daemon_sid = (
-                            current_session.daemon_session_id if current_session else ""
-                        )
+                        daemon_sid = current_session.daemon_session_id if current_session else ""
                         if daemon_sid not in self._init_shown:
                             self._init_shown.add(daemon_sid)
-                            mode_str = (
-                                display_mode(current_session.mode)
-                                if current_session
-                                else "unknown"
-                            )
+                            mode_str = display_mode(current_session.mode) if current_session else "unknown"
                             await self.send_message(
                                 channel_id,
                                 f"Connected to **{model}** | Mode: **{mode_str}**",
@@ -766,9 +738,7 @@ class DiscordAdapter:
                         await self.send_message(channel_id, chunk)
 
         except DaemonConnectionError as e:
-            await self.send_message(
-                channel_id, format_error(f"Lost connection to daemon: {e}")
-            )
+            await self.send_message(channel_id, format_error(f"Lost connection to daemon: {e}"))
         except Exception as e:
             logger.exception("Error forwarding message to Claude")
             await self.send_message(channel_id, format_error(f"Unexpected error: {e}"))
@@ -796,14 +766,10 @@ class DiscordAdapter:
             machine="Remote machine ID (e.g. dice-fuji1)",
             path="Project path on the remote machine",
         )
-        async def slash_start(
-            interaction: discord.Interaction, machine: str, path: str
-        ) -> None:
+        async def slash_start(interaction: discord.Interaction, machine: str, path: str) -> None:
             channel_id = f"discord:{interaction.channel_id}"
             self._channels[channel_id] = interaction.channel
-            await interaction.response.send_message(
-                f"Starting session on **{machine}**:`{path}`..."
-            )
+            await interaction.response.send_message(f"Starting session on **{machine}**:`{path}`...")
             if self._on_input:
                 try:
                     await self._on_input(
@@ -819,14 +785,8 @@ class DiscordAdapter:
         async def start_machine_autocomplete(
             interaction: discord.Interaction, current: str
         ) -> list[app_commands.Choice[str]]:
-            jump_hosts = {
-                m.proxy_jump for m in self.config.machines.values() if m.proxy_jump
-            }
-            machines = [
-                mid
-                for mid in self.config.machines
-                if mid not in jump_hosts and current.lower() in mid.lower()
-            ]
+            jump_hosts = {m.proxy_jump for m in self.config.machines.values() if m.proxy_jump}
+            machines = [mid for mid in self.config.machines if mid not in jump_hosts and current.lower() in mid.lower()]
             return [app_commands.Choice(name=m, value=m) for m in machines][:25]
 
         @slash_start.autocomplete("path")
@@ -843,26 +803,18 @@ class DiscordAdapter:
                 for mc in self.config.machines.values():
                     paths.extend(mc.default_paths)
                 paths = list(set(paths))
-            return [
-                app_commands.Choice(name=p, value=p)
-                for p in paths
-                if current.lower() in p.lower()
-            ][:25]
+            return [app_commands.Choice(name=p, value=p) for p in paths if current.lower() in p.lower()][:25]
 
         # ------------------------------------------------------------------ /resume
         @tree.command(name="resume", description="Resume a previously detached session")
         @app_commands.describe(session_id="Session ID or name to resume")
-        async def slash_resume(
-            interaction: discord.Interaction, session_id: str
-        ) -> None:
+        async def slash_resume(interaction: discord.Interaction, session_id: str) -> None:
             channel_id = f"discord:{interaction.channel_id}"
             self._channels[channel_id] = interaction.channel
             await interaction.response.send_message(f"Resuming session `{session_id}`...")
             if self._on_input:
                 try:
-                    await self._on_input(
-                        channel_id, f"/resume {session_id}", interaction.user.id, None
-                    )
+                    await self._on_input(channel_id, f"/resume {session_id}", interaction.user.id, None)
                 except Exception as e:
                     await self.send_message(channel_id, format_error(str(e)))
 
@@ -898,14 +850,8 @@ class DiscordAdapter:
         async def ls_machine_autocomplete(
             interaction: discord.Interaction, current: str
         ) -> list[app_commands.Choice[str]]:
-            jump_hosts = {
-                m.proxy_jump for m in self.config.machines.values() if m.proxy_jump
-            }
-            machines = [
-                mid
-                for mid in self.config.machines
-                if mid not in jump_hosts and current.lower() in mid.lower()
-            ]
+            jump_hosts = {m.proxy_jump for m in self.config.machines.values() if m.proxy_jump}
+            machines = [mid for mid in self.config.machines if mid not in jump_hosts and current.lower() in mid.lower()]
             return [app_commands.Choice(name=m, value=m) for m in machines][:25]
 
         # ------------------------------------------------------------------ /exit
@@ -928,16 +874,12 @@ class DiscordAdapter:
             machine="Remote machine ID",
             path="Project path of the session to destroy",
         )
-        async def slash_rm(
-            interaction: discord.Interaction, machine: str, path: str
-        ) -> None:
+        async def slash_rm(interaction: discord.Interaction, machine: str, path: str) -> None:
             await interaction.response.defer()
             channel_id = self._defer_and_register(interaction)
             if self._on_input:
                 try:
-                    await self._on_input(
-                        channel_id, f"/rm {machine} {path}", interaction.user.id, None
-                    )
+                    await self._on_input(channel_id, f"/rm {machine} {path}", interaction.user.id, None)
                 except Exception as e:
                     await self.send_message(channel_id, format_error(str(e)))
 
@@ -945,14 +887,8 @@ class DiscordAdapter:
         async def rm_machine_autocomplete(
             interaction: discord.Interaction, current: str
         ) -> list[app_commands.Choice[str]]:
-            jump_hosts = {
-                m.proxy_jump for m in self.config.machines.values() if m.proxy_jump
-            }
-            machines = [
-                mid
-                for mid in self.config.machines
-                if mid not in jump_hosts and current.lower() in mid.lower()
-            ]
+            jump_hosts = {m.proxy_jump for m in self.config.machines.values() if m.proxy_jump}
+            machines = [mid for mid in self.config.machines if mid not in jump_hosts and current.lower() in mid.lower()]
             return [app_commands.Choice(name=m, value=m) for m in machines][:25]
 
         # ------------------------------------------------------------------ /mode
@@ -960,26 +896,18 @@ class DiscordAdapter:
         @app_commands.describe(mode="Permission mode")
         @app_commands.choices(
             mode=[
-                app_commands.Choice(
-                    name="bypass - Full auto (skip all permissions)", value="auto"
-                ),
-                app_commands.Choice(
-                    name="code - Auto accept edits, confirm bash", value="code"
-                ),
+                app_commands.Choice(name="bypass - Full auto (skip all permissions)", value="auto"),
+                app_commands.Choice(name="code - Auto accept edits, confirm bash", value="code"),
                 app_commands.Choice(name="plan - Read-only analysis", value="plan"),
                 app_commands.Choice(name="ask - Confirm everything", value="ask"),
             ]
         )
-        async def slash_mode(
-            interaction: discord.Interaction, mode: app_commands.Choice[str]
-        ) -> None:
+        async def slash_mode(interaction: discord.Interaction, mode: app_commands.Choice[str]) -> None:
             await interaction.response.defer()
             channel_id = self._defer_and_register(interaction)
             if self._on_input:
                 try:
-                    await self._on_input(
-                        channel_id, f"/mode {mode.value}", interaction.user.id, None
-                    )
+                    await self._on_input(channel_id, f"/mode {mode.value}", interaction.user.id, None)
                 except Exception as e:
                     await self.send_message(channel_id, format_error(str(e)))
 
@@ -1002,9 +930,7 @@ class DiscordAdapter:
             channel_id = self._defer_and_register(interaction)
             if self._on_input:
                 try:
-                    await self._on_input(
-                        channel_id, f"/rename {name}", interaction.user.id, None
-                    )
+                    await self._on_input(channel_id, f"/rename {name}", interaction.user.id, None)
                 except Exception as e:
                     await self.send_message(channel_id, format_error(str(e)))
 
@@ -1015,14 +941,12 @@ class DiscordAdapter:
             channel_id = self._defer_and_register(interaction)
             if self._on_input:
                 try:
-                    await self._on_input(
-                        channel_id, "/interrupt", interaction.user.id, None
-                    )
+                    await self._on_input(channel_id, "/interrupt", interaction.user.id, None)
                 except Exception as e:
                     await self.send_message(channel_id, format_error(str(e)))
 
         # ------------------------------------------------------------------ /help
-        @tree.command(name="help", description="Show available Remote Code commands")
+        @tree.command(name="help", description="Show available Codecast commands")
         async def slash_help(interaction: discord.Interaction) -> None:
             await interaction.response.defer()
             channel_id = self._defer_and_register(interaction)
@@ -1034,12 +958,8 @@ class DiscordAdapter:
 
         # ------------------------------------------------------------------ /health
         @tree.command(name="health", description="Check daemon health status")
-        @app_commands.describe(
-            machine="Remote machine ID (optional, defaults to current session or all)"
-        )
-        async def slash_health(
-            interaction: discord.Interaction, machine: Optional[str] = None
-        ) -> None:
+        @app_commands.describe(machine="Remote machine ID (optional, defaults to current session or all)")
+        async def slash_health(interaction: discord.Interaction, machine: Optional[str] = None) -> None:
             await interaction.response.defer()
             channel_id = self._defer_and_register(interaction)
             cmd = f"/health {machine}" if machine else "/health"
@@ -1053,24 +973,14 @@ class DiscordAdapter:
         async def health_machine_autocomplete(
             interaction: discord.Interaction, current: str
         ) -> list[app_commands.Choice[str]]:
-            jump_hosts = {
-                m.proxy_jump for m in self.config.machines.values() if m.proxy_jump
-            }
-            machines = [
-                mid
-                for mid in self.config.machines
-                if mid not in jump_hosts and current.lower() in mid.lower()
-            ]
+            jump_hosts = {m.proxy_jump for m in self.config.machines.values() if m.proxy_jump}
+            machines = [mid for mid in self.config.machines if mid not in jump_hosts and current.lower() in mid.lower()]
             return [app_commands.Choice(name=m, value=m) for m in machines][:25]
 
         # ------------------------------------------------------------------ /monitor
         @tree.command(name="monitor", description="Monitor session details and queues")
-        @app_commands.describe(
-            machine="Remote machine ID (optional, defaults to current session or all)"
-        )
-        async def slash_monitor(
-            interaction: discord.Interaction, machine: Optional[str] = None
-        ) -> None:
+        @app_commands.describe(machine="Remote machine ID (optional, defaults to current session or all)")
+        async def slash_monitor(interaction: discord.Interaction, machine: Optional[str] = None) -> None:
             await interaction.response.defer()
             channel_id = self._defer_and_register(interaction)
             cmd = f"/monitor {machine}" if machine else "/monitor"
@@ -1084,14 +994,8 @@ class DiscordAdapter:
         async def monitor_machine_autocomplete(
             interaction: discord.Interaction, current: str
         ) -> list[app_commands.Choice[str]]:
-            jump_hosts = {
-                m.proxy_jump for m in self.config.machines.values() if m.proxy_jump
-            }
-            machines = [
-                mid
-                for mid in self.config.machines
-                if mid not in jump_hosts and current.lower() in mid.lower()
-            ]
+            jump_hosts = {m.proxy_jump for m in self.config.machines.values() if m.proxy_jump}
+            machines = [mid for mid in self.config.machines if mid not in jump_hosts and current.lower() in mid.lower()]
             return [app_commands.Choice(name=m, value=m) for m in machines][:25]
 
         # ------------------------------------------------------------------ /add-machine
@@ -1149,9 +1053,7 @@ class DiscordAdapter:
 
             existing = set(self.config.machines.keys())
             ssh_hosts = [
-                e.name
-                for e in parse_ssh_config()
-                if e.name not in existing and current.lower() in e.name.lower()
+                e.name for e in parse_ssh_config() if e.name not in existing and current.lower() in e.name.lower()
             ]
             return [app_commands.Choice(name=h, value=h) for h in ssh_hosts][:25]
 
@@ -1159,9 +1061,7 @@ class DiscordAdapter:
         async def add_machine_proxy_autocomplete(
             interaction: discord.Interaction, current: str
         ) -> list[app_commands.Choice[str]]:
-            machines = [
-                mid for mid in self.config.machines if current.lower() in mid.lower()
-            ]
+            machines = [mid for mid in self.config.machines if current.lower() in mid.lower()]
             return [app_commands.Choice(name=m, value=m) for m in machines][:25]
 
         # ------------------------------------------------------------------ /import-ssh
@@ -1171,18 +1071,14 @@ class DiscordAdapter:
             channel_id = self._defer_and_register(interaction)
             if self._on_input:
                 try:
-                    await self._on_input(
-                        channel_id, "/add-machine --from-ssh", interaction.user.id, None
-                    )
+                    await self._on_input(channel_id, "/add-machine --from-ssh", interaction.user.id, None)
                 except Exception as e:
                     await self.send_message(channel_id, format_error(str(e)))
 
         # ------------------------------------------------------------------ /remove-machine
         @tree.command(name="remove-machine", description="Remove a machine from config")
         @app_commands.describe(machine="Machine ID to remove")
-        async def slash_remove_machine(
-            interaction: discord.Interaction, machine: str
-        ) -> None:
+        async def slash_remove_machine(interaction: discord.Interaction, machine: str) -> None:
             await interaction.response.defer()
             channel_id = self._defer_and_register(interaction)
             if self._on_input:
@@ -1200,42 +1096,28 @@ class DiscordAdapter:
         async def remove_machine_autocomplete(
             interaction: discord.Interaction, current: str
         ) -> list[app_commands.Choice[str]]:
-            jump_hosts = {
-                m.proxy_jump for m in self.config.machines.values() if m.proxy_jump
-            }
-            machines = [
-                mid
-                for mid in self.config.machines
-                if mid not in jump_hosts and current.lower() in mid.lower()
-            ]
+            jump_hosts = {m.proxy_jump for m in self.config.machines.values() if m.proxy_jump}
+            machines = [mid for mid in self.config.machines if mid not in jump_hosts and current.lower() in mid.lower()]
             return [app_commands.Choice(name=m, value=m) for m in machines][:25]
 
         # ------------------------------------------------------------------ /update
-        @tree.command(
-            name="update", description="Pull latest code and restart (admin only)"
-        )
+        @tree.command(name="update", description="Pull latest code and restart (admin only)")
         async def slash_update(interaction: discord.Interaction) -> None:
             await interaction.response.defer()
             channel_id = self._defer_and_register(interaction)
             if self._on_input:
                 try:
-                    await self._on_input(
-                        channel_id, "/update", interaction.user.id, None
-                    )
+                    await self._on_input(channel_id, "/update", interaction.user.id, None)
                 except Exception as e:
                     await self.send_message(channel_id, format_error(str(e)))
 
         # ------------------------------------------------------------------ /restart
-        @tree.command(
-            name="restart", description="Restart the head node (admin only)"
-        )
+        @tree.command(name="restart", description="Restart the head node (admin only)")
         async def slash_restart(interaction: discord.Interaction) -> None:
             await interaction.response.defer()
             channel_id = self._defer_and_register(interaction)
             if self._on_input:
                 try:
-                    await self._on_input(
-                        channel_id, "/restart", interaction.user.id, None
-                    )
+                    await self._on_input(channel_id, "/restart", interaction.user.id, None)
                 except Exception as e:
                     await self.send_message(channel_id, format_error(str(e)))

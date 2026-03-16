@@ -66,7 +66,7 @@ def _sanitize_filename(name: str) -> str:
     # Remove leading dots (hidden files)
     name = name.lstrip(".")
     # Remove shell metacharacters
-    name = re.sub(r'[;&|$`(){}\[\]!#~]', "", name)
+    name = re.sub(r"[;&|$`(){}\[\]!#~]", "", name)
     # Replace spaces with hyphens
     name = name.replace(" ", "-")
     # Remove consecutive hyphens
@@ -117,7 +117,7 @@ class FilePool:
             allowed_types: List of MIME type patterns (supports wildcards like "image/*").
         """
         self.max_size = max_size
-        self.pool_dir = pool_dir or Path.home() / ".remote-code" / "file-pool"
+        self.pool_dir = pool_dir or Path.home() / ".codecast" / "file-pool"
         self.allowed_types = allowed_types or [
             "text/plain",
             "text/markdown",
@@ -165,8 +165,7 @@ class FilePool:
         # Check if single file exceeds pool size
         if attachment.size > self.max_size:
             raise ValueError(
-                f"File {attachment.filename} ({attachment.size} bytes) exceeds "
-                f"pool max size ({self.max_size} bytes)"
+                f"File {attachment.filename} ({attachment.size} bytes) exceeds pool max size ({self.max_size} bytes)"
             )
 
         # Generate unique file ID
@@ -200,10 +199,7 @@ class FilePool:
         # Evict old files if over limit
         self._evict_if_needed()
 
-        logger.info(
-            f"Downloaded {attachment.filename} ({attachment.size} bytes) "
-            f"as {file_id} to {local_path}"
-        )
+        logger.info(f"Downloaded {attachment.filename} ({attachment.size} bytes) as {file_id} to {local_path}")
 
         return entry
 
@@ -221,10 +217,7 @@ class FilePool:
         """
         size = len(data)
         if size > self.max_size:
-            raise ValueError(
-                f"File {original_name} ({size} bytes) exceeds "
-                f"pool max size ({self.max_size} bytes)"
-            )
+            raise ValueError(f"File {original_name} ({size} bytes) exceeds pool max size ({self.max_size} bytes)")
 
         uuid_short = uuid.uuid4().hex[:8]
         prefix = f"{session_prefix}_" if session_prefix else ""
@@ -248,10 +241,7 @@ class FilePool:
         self._entries[file_id] = entry
         self._evict_if_needed()
 
-        logger.info(
-            f"Stored {original_name} ({size} bytes) "
-            f"as {file_id} to {local_path}"
-        )
+        logger.info(f"Stored {original_name} ({size} bytes) as {file_id} to {local_path}")
 
         return entry
 
@@ -274,10 +264,7 @@ class FilePool:
 
         size = source.stat().st_size
         if size > self.max_size:
-            raise ValueError(
-                f"File {original_name} ({size} bytes) exceeds "
-                f"pool max size ({self.max_size} bytes)"
-            )
+            raise ValueError(f"File {original_name} ({size} bytes) exceeds pool max size ({self.max_size} bytes)")
 
         uuid_short = uuid.uuid4().hex[:8]
         prefix = f"{session_prefix}_" if session_prefix else ""
@@ -301,10 +288,7 @@ class FilePool:
         self._entries[file_id] = entry
         self._evict_if_needed()
 
-        logger.info(
-            f"Stored {original_name} ({size} bytes) "
-            f"as {file_id} to {local_path}"
-        )
+        logger.info(f"Stored {original_name} ({size} bytes) as {file_id} to {local_path}")
 
         return entry
 
@@ -326,10 +310,7 @@ class FilePool:
 
         size = local_path.stat().st_size
         if size > self.max_size:
-            raise ValueError(
-                f"File {original_name} ({size} bytes) exceeds "
-                f"pool max size ({self.max_size} bytes)"
-            )
+            raise ValueError(f"File {original_name} ({size} bytes) exceeds pool max size ({self.max_size} bytes)")
 
         uuid_short = uuid.uuid4().hex[:8]
         prefix = f"{session_prefix}_" if session_prefix else ""
@@ -356,9 +337,7 @@ class FilePool:
         """Remove oldest files until total_size <= max_size."""
         while self.total_size > self.max_size and self._entries:
             # Find oldest entry
-            oldest_id = min(
-                self._entries, key=lambda fid: self._entries[fid].created_at
-            )
+            oldest_id = min(self._entries, key=lambda fid: self._entries[fid].created_at)
             oldest = self._entries.pop(oldest_id)
             try:
                 if oldest.local_path.exists():

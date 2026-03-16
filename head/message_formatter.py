@@ -57,7 +57,7 @@ def _find_split_point(text: str, max_len: int) -> int:
     segment = text[:max_len]
 
     # Check if we're inside a code block
-    code_blocks = list(re.finditer(r'```', segment))
+    code_blocks = list(re.finditer(r"```", segment))
     if len(code_blocks) % 2 == 1:
         # Odd number of ``` means we're inside a code block
         # Find the last complete code block end before max_len
@@ -260,9 +260,7 @@ def format_monitor(machine_id: str, monitor: dict[str, Any]) -> str:
         resp_pending = queue.get("responsePending", 0)
         connected = queue.get("clientConnected", False)
 
-        status_icon = {
-            "idle": "●", "busy": "◉", "error": "✕", "destroyed": "✕"
-        }.get(status, "?")
+        status_icon = {"idle": "●", "busy": "◉", "error": "✕", "destroyed": "✕"}.get(status, "?")
 
         conn_icon = "connected" if connected else "**disconnected**"
         model_str = f" | {model}" if model else ""
@@ -315,4 +313,4 @@ def _truncate(text: str, max_len: int) -> str:
     """Truncate text with ellipsis."""
     if len(text) <= max_len:
         return text
-    return text[:max_len - 3] + "..."
+    return text[: max_len - 3] + "..."

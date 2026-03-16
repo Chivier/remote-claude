@@ -18,9 +18,9 @@ rm -rf book
 echo "==> Building default (English) at root..."
 cat > book.toml <<'EOF'
 [book]
-title = "Remote Code"
-description = "Remote Code CLI control via Discord/Telegram bots"
-authors = ["Remote Code Contributors"]
+title = "Codecast"
+description = "Codecast CLI control via Discord/Telegram bots"
+authors = ["Codecast Contributors"]
 language = "en"
 src = "docs/en"
 
@@ -40,9 +40,9 @@ mdbook build
 echo "==> Building Chinese documentation..."
 cat > book.toml <<'EOF'
 [book]
-title = "Remote Code"
+title = "Codecast"
 description = "通过 Discord/Telegram Bot 远程控制 Claude CLI"
-authors = ["Remote Code Contributors"]
+authors = ["Codecast Contributors"]
 language = "zh"
 src = "docs/zh"
 
@@ -71,9 +71,9 @@ done
 # ── 4. Restore book.toml ──
 cat > book.toml <<'EOF'
 [book]
-title = "Remote Code"
-description = "Remote Code CLI control via Discord/Telegram bots"
-authors = ["Remote Code Contributors"]
+title = "Codecast"
+description = "Codecast CLI control via Discord/Telegram bots"
+authors = ["Codecast Contributors"]
 language = "en"
 src = "docs/en"
 

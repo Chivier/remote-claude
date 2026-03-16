@@ -30,9 +30,7 @@ class DaemonClient:
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=self.timeout)
-            )
+            self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.timeout))
         return self._session
 
     def _url(self, local_port: int) -> str:
@@ -75,16 +73,23 @@ class DaemonClient:
         Returns:
             sessionId: The daemon's session ID.
         """
-        result = await self._rpc_call(local_port, "session.create", {
-            "path": path,
-            "mode": mode,
-        })
+        result = await self._rpc_call(
+            local_port,
+            "session.create",
+            {
+                "path": path,
+                "mode": mode,
+            },
+        )
         session_id: str = result["sessionId"]
         logger.info(f"Created session {session_id} at {path}")
         return session_id
 
     async def send_message(
-        self, local_port: int, session_id: str, message: str,
+        self,
+        local_port: int,
+        session_id: str,
+        message: str,
         idle_timeout: int = 300,
     ) -> AsyncIterator[dict[str, Any]]:
         """
@@ -133,7 +138,10 @@ class DaemonClient:
                             continue
 
         except asyncio.TimeoutError:
-            yield {"type": "error", "message": f"Stream idle timeout ({idle_timeout}s with no events). Session may be stuck."}
+            yield {
+                "type": "error",
+                "message": f"Stream idle timeout ({idle_timeout}s with no events). Session may be stuck.",
+            }
         except aiohttp.ClientError as e:
             yield {"type": "error", "message": f"Connection error: {e}"}
 
@@ -150,9 +158,13 @@ class DaemonClient:
 
     async def destroy_session(self, local_port: int, session_id: str) -> bool:
         """Destroy a session and kill the Claude process."""
-        result = await self._rpc_call(local_port, "session.destroy", {
-            "sessionId": session_id,
-        })
+        result = await self._rpc_call(
+            local_port,
+            "session.destroy",
+            {
+                "sessionId": session_id,
+            },
+        )
         return bool(result.get("ok", False))
 
     async def list_sessions(self, local_port: int) -> list[dict[str, Any]]:
@@ -162,10 +174,14 @@ class DaemonClient:
 
     async def set_mode(self, local_port: int, session_id: str, mode: str) -> bool:
         """Set the permission mode for a session."""
-        result = await self._rpc_call(local_port, "session.set_mode", {
-            "sessionId": session_id,
-            "mode": mode,
-        })
+        result = await self._rpc_call(
+            local_port,
+            "session.set_mode",
+            {
+                "sessionId": session_id,
+                "mode": mode,
+            },
+        )
         return bool(result.get("ok", False))
 
     async def health_check(self, local_port: int) -> dict[str, Any]:
@@ -178,29 +194,41 @@ class DaemonClient:
 
     async def reconnect_session(self, local_port: int, session_id: str) -> list[dict[str, Any]]:
         """Reconnect to a session and get buffered events."""
-        result = await self._rpc_call(local_port, "session.reconnect", {
-            "sessionId": session_id,
-        })
+        result = await self._rpc_call(
+            local_port,
+            "session.reconnect",
+            {
+                "sessionId": session_id,
+            },
+        )
         return result.get("bufferedEvents", [])
 
     async def get_queue_stats(self, local_port: int, session_id: str) -> dict[str, Any]:
         """Get message queue stats for a session."""
-        return await self._rpc_call(local_port, "session.queue_stats", {
-            "sessionId": session_id,
-        })
+        return await self._rpc_call(
+            local_port,
+            "session.queue_stats",
+            {
+                "sessionId": session_id,
+            },
+        )
 
     async def interrupt_session(self, local_port: int, session_id: str) -> dict[str, Any]:
         """Interrupt the current Claude operation for a session.
-        
+
         Sends SIGINT to the Claude CLI process to stop the current request.
         The process stays alive for future messages.
-        
+
         Returns:
             dict with 'ok' and 'interrupted' (whether there was an active operation to interrupt).
         """
-        return await self._rpc_call(local_port, "session.interrupt", {
-            "sessionId": session_id,
-        })
+        return await self._rpc_call(
+            local_port,
+            "session.interrupt",
+            {
+                "sessionId": session_id,
+            },
+        )
 
     # ─── Cleanup ───
 
@@ -220,4 +248,5 @@ class DaemonError(Exception):
 
 class DaemonConnectionError(Exception):
     """Cannot connect to daemon."""
+
     pass
