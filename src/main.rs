@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+mod auth;
 mod config;
 mod message_queue;
 mod server;
@@ -15,6 +16,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Notify;
 use tracing::{error, info, warn};
 
+use auth::TokenStore;
 use config::DaemonConfig;
 use server::AppState;
 use session_pool::SessionPool;
@@ -43,12 +45,22 @@ async fn main() {
         skill_manager.source_dir().display()
     );
 
+    // Initialize token store for auth middleware
+    let tokens_path = config.tokens_file.clone().unwrap_or_else(|| {
+        dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".codecast")
+            .join("tokens.yaml")
+    });
+    let token_store = TokenStore::new(tokens_path);
+
     let state = Arc::new(AppState {
         session_pool: SessionPool::new(),
         skill_manager,
         start_time: Instant::now(),
         shutdown: shutdown.clone(),
         config,
+        token_store,
     });
 
     let app = server::build_router(state.clone());
@@ -124,8 +136,11 @@ async fn main() {
         info!("[Daemon] All sessions destroyed");
     };
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal)
-        .await
-        .unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal)
+    .await
+    .unwrap();
 }

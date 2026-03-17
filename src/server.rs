@@ -12,6 +12,7 @@ use tokio::sync::Notify;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::info;
 
+use crate::auth::TokenStore;
 use crate::config::DaemonConfig;
 use crate::session_pool::SessionPool;
 use crate::skill_manager::SkillManager;
@@ -24,12 +25,17 @@ pub struct AppState {
     pub start_time: Instant,
     pub shutdown: Arc<Notify>,
     pub config: DaemonConfig,
+    pub token_store: TokenStore,
 }
 
 /// Build the axum router
 pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/rpc", post(handle_rpc))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::auth_middleware,
+        ))
         .with_state(state)
 }
 
