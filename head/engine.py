@@ -39,6 +39,7 @@ from .message_formatter import (
     format_monitor,
     display_mode,
 )
+from .file_forward import FileForwardMatcher, ForwardDecision
 from .platform.protocol import PlatformAdapter, MessageHandle, FileAttachment
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,10 @@ class BotEngine:
         self.daemon = daemon_client
         self.config = config
         self.file_pool = file_pool
+        # File forwarding matcher (initialized if config enables it)
+        self.file_forward: Optional[FileForwardMatcher] = None
+        if config.file_forward.enabled:
+            self.file_forward = FileForwardMatcher(config.file_forward)
         # Track which channels are currently streaming (to prevent concurrent sends)
         self._streaming: set[str] = set()
         # Track which sessions have already shown the "Connected to" init message
@@ -110,7 +115,7 @@ class BotEngine:
         except Exception as e:
             logger.warning(f"Failed to process restart notify: {e}")
 
-    def is_admin(self, user_id: Optional[int]) -> bool:
+    def is_admin(self, user_id: Optional[int | str]) -> bool:
         """Check if a user ID is in the admin_users list (platform-aware)."""
         if user_id is None:
             return False
@@ -120,6 +125,8 @@ class BotEngine:
         if platform == "telegram" and self.config.bot.telegram:
             admin_users = getattr(self.config.bot.telegram, "admin_users", None)
             return user_id in (admin_users or []) if admin_users else False
+        if platform == "lark" and self.config.bot.lark:
+            return str(user_id) in [str(u) for u in (self.config.bot.lark.admin_users or [])]
         return False
 
     # ─── Command Dispatcher ───
@@ -159,7 +166,7 @@ class BotEngine:
         cmd = parts[0].lower()
 
         # Commands that need all args split individually (variadic)
-        variadic_cmds = {"/add-machine", "/addmachine"}
+        variadic_cmds = {"/add-machine", "/addmachine", "/add-peer", "/addpeer"}
         if cmd in variadic_cmds:
             args = parts[1:]
         else:
@@ -190,13 +197,17 @@ class BotEngine:
                 await self.cmd_health(channel_id, args)
             elif cmd == "/monitor":
                 await self.cmd_monitor(channel_id, args)
-            elif cmd in ("/add-machine", "/addmachine"):
+            elif cmd in ("/add-machine", "/addmachine", "/add-peer", "/addpeer"):
                 await self.cmd_add_machine(channel_id, args)
             elif cmd in (
                 "/remove-machine",
                 "/removemachine",
                 "/rm-machine",
                 "/rmmachine",
+                "/remove-peer",
+                "/removepeer",
+                "/rm-peer",
+                "/rmpeer",
             ):
                 await self.cmd_remove_machine(channel_id, args)
             elif cmd == "/restart":
@@ -229,7 +240,7 @@ class BotEngine:
         if len(args) < 2:
             await self.send_message(
                 channel_id,
-                "Usage: `/start <machine_id> <remote_path>`\n"
+                "Usage: `/start <peer> <remote_path>`\n"
                 "Example: `/start gpu-1 ~/project` (path on the remote machine)",
             )
             return
@@ -316,7 +327,7 @@ class BotEngine:
         if not args:
             await self.send_message(
                 channel_id,
-                "Usage:\n`/ls machine` - List all machines\n`/ls session [machine]` - List sessions",
+                "Usage:\n`/ls machine` - List all machines/peers\n`/ls session [machine]` - List sessions",
             )
             return
 
@@ -352,7 +363,7 @@ class BotEngine:
     async def cmd_rm(self, channel_id: str, args: list[str]) -> None:
         """/rm <machine> <path> - Destroy a session."""
         if len(args) < 2:
-            await self.send_message(channel_id, "Usage: `/rm <machine_id> <path>`")
+            await self.send_message(channel_id, "Usage: `/rm <peer> <path>`")
             return
 
         machine_id = args[0]
@@ -562,7 +573,7 @@ class BotEngine:
             if not results:
                 await self.send_message(
                     channel_id,
-                    "No active tunnels. Use `/start` or specify a machine: `/health <machine>`",
+                    "No active tunnels. Use `/start` or specify a peer: `/health <peer>`",
                 )
                 return
             await self.send_message(channel_id, "\n\n".join(results))
@@ -601,7 +612,7 @@ class BotEngine:
             if not results:
                 await self.send_message(
                     channel_id,
-                    "No active tunnels. Use `/start` or specify a machine: `/monitor <machine>`",
+                    "No active tunnels. Use `/start` or specify a peer: `/monitor <peer>`",
                 )
                 return
             await self.send_message(channel_id, "\n\n".join(results))
@@ -1085,22 +1096,24 @@ class BotEngine:
         """/help - Show available commands."""
         help_text = """**Codecast Commands:**
 
-`/start <machine> <remote_path>` - Start a new Claude session
+`/start <peer> <remote_path>` - Start a new Claude session
 `/resume <session_id_or_name>` - Resume a previous session
 `/new` - Start a new session in the same directory
 `/clear` - Clear context: destroy + restart in same directory
-`/ls machine` - List all machines
+`/ls machine` - List all machines/peers
 `/ls session [machine]` - List sessions
 `/exit` - Detach from current session
-`/rm <machine> <path>` - Destroy a session
+`/rm <peer> <path>` - Destroy a session
 `/mode <auto|code|plan|ask>` - Switch permission mode
 `/rename <new_name>` - Rename current session
 `/status` - Show current session info
-`/health [machine]` - Check daemon health
-`/monitor [machine]` - Monitor session details & queues
+`/health [peer]` - Check daemon health
+`/monitor [peer]` - Monitor session details & queues
 `/add-machine <name>` - Add machine (from SSH config)
 `/add-machine --from-ssh` - Browse all SSH hosts
+`/add-peer <name>` - Add peer (alias for /add-machine)
 `/remove-machine <machine>` - Remove a machine
+`/remove-peer <peer>` - Remove peer (alias for /remove-machine)
 `/update` - Pull latest code and restart (admin)
 `/restart` - Restart head node (admin)
 `/help` - Show this help
@@ -1136,6 +1149,50 @@ After `/start` or `/resume`, send any message to interact with Claude."""
             )
         return text
 
+    async def _detect_and_forward_files(
+        self, channel_id: str, machine_id: str, text: str
+    ) -> None:
+        """Detect file paths in text and forward matching files."""
+        if not self.file_forward:
+            return
+
+        paths = self.file_forward.detect_paths(text, channel_id)
+        for path in paths:
+            # Pre-download intent check (file_size=0 skips size validation)
+            decision = self.file_forward.should_forward(path, file_size=0)
+
+            if decision.action == "auto_send":
+                local_path = None
+                try:
+                    local_path = await self.ssh.download_file(
+                        machine_id, path, self.file_forward.config.download_dir
+                    )
+                    actual_size = local_path.stat().st_size
+                    # Authoritative size check with actual file
+                    decision = self.file_forward.should_forward(path, actual_size)
+                    if decision.action == "auto_send":
+                        filename = Path(path).name
+                        await self.adapter.send_file(
+                            channel_id, local_path, caption=f"{filename}"
+                        )
+                    else:
+                        await self.send_message(
+                            channel_id,
+                            f"File `{Path(path).name}` ({actual_size // 1024}KB) "
+                            f"exceeds size limit. {decision.reason}",
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to forward file {path}: {e}")
+                finally:
+                    if local_path and local_path.exists():
+                        local_path.unlink(missing_ok=True)
+
+            elif decision.action == "notify":
+                await self.send_message(
+                    channel_id,
+                    f"Detected file: `{path}` — {decision.reason}",
+                )
+
     async def _forward_message(
         self,
         channel_id: str,
@@ -1160,6 +1217,10 @@ After `/start` or `/resume`, send any message to interact with Claude."""
 
         # Start typing indicator
         await self.adapter.start_typing(channel_id)
+
+        # Reset file forward dedup for this stream
+        if self.file_forward:
+            self.file_forward.reset(channel_id)
 
         try:
             local_port = await self.ssh.ensure_tunnel(session.machine_id)
@@ -1223,6 +1284,12 @@ After `/start` or `/resume`, send any message to interact with Claude."""
                             chunks = split_message(content)
                             for chunk in chunks:
                                 await self.send_message(channel_id, chunk)
+
+                        # Detect and forward files from completed text
+                        if self.file_forward:
+                            await self._detect_and_forward_files(
+                                channel_id, session.machine_id, content
+                            )
 
                 elif event_type == "tool_use":
                     tool_batch.append(event)
@@ -1290,3 +1357,5 @@ After `/start` or `/resume`, send any message to interact with Claude."""
         finally:
             await self.adapter.stop_typing(channel_id)
             self._streaming.discard(channel_id)
+            if self.file_forward:
+                self.file_forward.cleanup(channel_id)

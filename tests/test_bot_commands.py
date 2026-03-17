@@ -1039,3 +1039,77 @@ class TestAdminCommands:
         await bot.cmd_restart("discord:100", user_id=None)
         msg = bot.get_last_message()
         assert "admin" in msg.lower()
+
+
+# ─── Peer Command Aliases (v2) ───
+
+
+class TestPeerAliases:
+    """Test that v2 peer command aliases route to the same handlers as machine commands."""
+
+    @pytest.mark.asyncio
+    async def test_add_peer_alias(self, bot):
+        """add-peer routes to same handler as add-machine."""
+        await bot.handle_input("discord:100", "/add-peer")
+        texts = bot.get_all_message_texts()
+        # Should show usage or prompt (same as add-machine with no args)
+        assert len(texts) > 0
+
+    @pytest.mark.asyncio
+    async def test_addpeer_alias(self, bot):
+        """addpeer (no dash) routes to same handler as add-machine."""
+        await bot.handle_input("discord:100", "/addpeer")
+        texts = bot.get_all_message_texts()
+        assert len(texts) > 0
+
+    @pytest.mark.asyncio
+    async def test_remove_peer_alias(self, bot):
+        """remove-peer routes to same handler as remove-machine."""
+        await bot.handle_input("discord:100", "/remove-peer no-such-machine")
+        texts = bot.get_all_message_texts()
+        assert any("not found" in t.lower() for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_removepeer_alias(self, bot):
+        """removepeer (no dash) routes to same handler as remove-machine."""
+        await bot.handle_input("discord:100", "/removepeer no-such-machine")
+        texts = bot.get_all_message_texts()
+        assert any("not found" in t.lower() for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_rm_peer_alias(self, bot):
+        """rm-peer routes to same handler as remove-machine."""
+        await bot.handle_input("discord:100", "/rm-peer no-such-machine")
+        texts = bot.get_all_message_texts()
+        assert any("not found" in t.lower() for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_rmpeer_alias(self, bot):
+        """rmpeer (no dash) routes to same handler as remove-machine."""
+        await bot.handle_input("discord:100", "/rmpeer no-such-machine")
+        texts = bot.get_all_message_texts()
+        assert any("not found" in t.lower() for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_add_peer_variadic(self, bot, mock_config):
+        """add-peer should be in variadic commands and handle multiple args."""
+        await bot.handle_input("discord:100", "/add-peer test-gpu gpu.example.com testuser")
+        texts = bot.get_all_message_texts()
+        assert any("test-gpu" in t and "added" in t.lower() for t in texts)
+        assert "test-gpu" in bot.config.machines
+
+    @pytest.mark.asyncio
+    async def test_remove_peer_existing_machine(self, bot, mock_router):
+        """remove-peer can remove an existing machine."""
+        await bot.handle_input("discord:100", "/remove-peer gpu-1")
+        texts = bot.get_all_message_texts()
+        assert any("removed" in t.lower() for t in texts)
+        assert "gpu-1" not in bot.config.machines
+
+    @pytest.mark.asyncio
+    async def test_help_shows_peer_aliases(self, bot):
+        """Help text should mention peer aliases."""
+        await bot.cmd_help("discord:100")
+        msg = bot.get_last_message()
+        assert "/add-peer" in msg
+        assert "/remove-peer" in msg
