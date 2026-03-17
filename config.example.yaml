@@ -1,35 +1,32 @@
-# Codecast Configuration
+# Codecast Configuration (v2)
 # Copy this file to config.yaml and edit as needed.
 
-machines:
-  # Example: a GPU server accessible via SSH
-  gpu-1:
-    host: gpu1.example.com      # hostname or IP
-    user: your-ssh-user         # SSH username
-    # ssh_key: ~/.ssh/id_rsa    # Optional: path to SSH key (defaults to ssh-agent)
-    # port: 22                  # SSH port (default: 22)
-    # proxy_jump: gateway       # Optional: jump host (must also be defined as a machine)
-    daemon_port: 9100           # Port for daemon RPC (default: 9100)
-    # node_path: /usr/bin/node  # Optional: path to node on remote
-    default_paths:              # Commonly used project paths (for reference)
-      - /home/your-user/project-a
-      - /home/your-user/project-b
+daemon:
+  port: 9100                    # Daemon RPC port (default: 9100)
+  bind: 127.0.0.1              # Bind address (default: 127.0.0.1)
+  log_file: ~/.codecast/daemon.log  # Daemon log file
 
-  # Example: another server behind a jump host
+peers:
+  # Example: HTTP peer (direct connection, no SSH)
+  # gpu-1:
+  #   type: http
+  #   url: http://gpu1.example.com:9100
+  #   default_paths:
+  #     - /home/your-user/project-a
+  #     - /home/your-user/project-b
+
+  # Example: SSH peer (connection via SSH tunnel)
   # gpu-2:
+  #   type: ssh
   #   host: gpu2.lab.internal
   #   user: your-ssh-user
-  #   proxy_jump: gpu-1
-  #   daemon_port: 9100
-
-  # Example: localhost (head node itself, no SSH needed)
-  # local:
-  #   host: localhost             # auto-detected as localhost
-  #   user: your-user
-  #   daemon_port: 9200           # use different port to avoid conflicts
-  #   node_path: /usr/bin/node
+  #   # ssh_key: ~/.ssh/id_rsa    # Optional: path to SSH key (defaults to ssh-agent)
+  #   # port: 22                  # SSH port (default: 22)
+  #   # proxy_jump: gpu-1         # Optional: jump host
+  #   daemon_port: 9100           # Port for daemon RPC (default: 9100)
+  #   # node_path: /usr/bin/node  # Optional: path to node on remote
   #   default_paths:
-  #     - /home/your-user/projects
+  #     - /home/your-user/project-a
 
 bot:
   discord:
@@ -45,6 +42,18 @@ bot:
     allowed_users:              # Only respond to these user IDs (empty = all)
       # - 123456789
 
+  # lark:
+  #   app_id: ${LARK_APP_ID}           # Feishu app ID (from open.feishu.cn)
+  #   app_secret: ${LARK_APP_SECRET}   # Feishu app secret
+  #   allowed_chats: []                # Chat IDs to respond in (empty = all)
+  #   admin_users: []                  # Admin open_ids for /restart, /update
+  #   use_cards: true                  # Use interactive cards for status display
+
+webui:
+  port: 31949                   # WebUI HTTP port
+  bind: 127.0.0.1              # Bind address
+  enabled: true                 # Enable WebUI
+
 # Default permission mode for new sessions
 # auto = bypassPermissions (full auto, no confirmation needed)
 # code = acceptEdits (auto accept file edits, confirm bash)
@@ -59,21 +68,3 @@ tool_batch_size: 15
 skills:
   shared_dir: ./skills          # Local skills directory to sync to remotes
   sync_on_start: true           # Sync skills when /start creates a session
-
-daemon:
-  install_dir: ~/.codecast/daemon  # Where daemon code lives on remote
-  auto_deploy: true                     # Auto-deploy daemon code to remotes
-  log_file: ~/.codecast/daemon.log # Daemon log file on remote
-
-# File transfer settings (Discord attachments -> remote machines)
-file_pool:
-  max_size: 1073741824              # Max pool size in bytes (default: 1GB)
-  pool_dir: ~/.codecast/file-pool  # Local file cache directory
-  remote_dir: /tmp/codecast/files  # Remote file staging directory
-  allowed_types:                    # MIME type patterns for allowed files
-    - text/plain
-    - text/markdown
-    - application/pdf
-    - "image/*"
-    - "video/*"
-    - "audio/*"
