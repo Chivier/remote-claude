@@ -298,29 +298,37 @@ class SSHManager:
         machine = self._get_machine(machine_id)
         install_dir = self.config.daemon.install_dir
 
-        # Check if daemon is already running
+        # Check if a daemon is already listening on the expected port
+        check_port = await self._read_daemon_port_remote(conn, machine.daemon_port)
+        health_result = await conn.run(
+            f"curl -sf http://127.0.0.1:{check_port}/rpc "
+            f'-d \'{{"method":"health.check"}}\' '
+            f"-H 'Content-Type: application/json' 2>/dev/null || true"
+        )
+        health_out = health_result.stdout.strip() if health_result.stdout else ""
+        if '"ok":true' in health_out or '"ok": true' in health_out:
+            logger.info(f"Daemon already healthy on {machine_id} (port {check_port})")
+            return
+
+        # Daemon not responding — check if a stale process exists
         result = await conn.run(f"pgrep -f 'codecast-daemon' || true")
         stdout = result.stdout.strip() if result.stdout else ""
 
         if stdout:
-            # Verify the running daemon is actually responsive
-            check_port = await self._read_daemon_port_remote(conn, machine.daemon_port)
-            health_result = await conn.run(
-                f"curl -sf http://127.0.0.1:{check_port}/rpc "
-                f'-d \'{{"method":"health.check"}}\' '
-                f"-H 'Content-Type: application/json' 2>/dev/null || true"
-            )
-            health_out = health_result.stdout.strip() if health_result.stdout else ""
-            if '"ok":true' in health_out or '"ok": true' in health_out:
-                logger.info(f"Daemon already running on {machine_id} (PID: {stdout})")
-                return
+            # Try graceful shutdown first (SIGTERM), then wait
+            pids = stdout.splitlines()[0]
+            logger.warning(f"Daemon on {machine_id} (PID: {pids}) is unresponsive, sending SIGTERM...")
+            await conn.run(f"kill {pids} 2>/dev/null || true")
+            await asyncio.sleep(2)
 
-            # Daemon process exists but is unresponsive — kill and restart
-            logger.warning(f"Daemon on {machine_id} (PID: {stdout}) is unresponsive, restarting...")
-            await conn.run(f"kill -9 {stdout.splitlines()[0]} 2>/dev/null || true")
-            await asyncio.sleep(1)
+            # Check if it's gone
+            recheck = await conn.run(f"kill -0 {pids} 2>/dev/null && echo 'alive' || echo 'dead'")
+            if "alive" in (recheck.stdout or ""):
+                logger.warning(f"Daemon on {machine_id} (PID: {pids}) didn't stop, sending SIGKILL...")
+                await conn.run(f"kill -9 {pids} 2>/dev/null || true")
+                await asyncio.sleep(1)
 
-        logger.info(f"Daemon not running on {machine_id}, starting...")
+        logger.info(f"Starting daemon on {machine_id}...")
 
         # Check if daemon binary exists on remote — at install_dir or on PATH
         binary_path = f"{install_dir}/codecast-daemon"
