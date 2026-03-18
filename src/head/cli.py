@@ -97,6 +97,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 _CODECAST_DIR = Path.home() / ".codecast"
 _PORT_FILE = _CODECAST_DIR / "daemon.port"
+_HEAD_PID_FILE = _CODECAST_DIR / "head.pid"
 _WEBUI_PID_FILE = _CODECAST_DIR / "webui.pid"
 _WEBUI_PORT_FILE = _CODECAST_DIR / "webui.port"
 
@@ -250,9 +251,11 @@ def _cmd_update(args: argparse.Namespace) -> None:
 def _cmd_status(args: argparse.Namespace) -> None:
     """Show status of all codecast components."""
     # ── Head Node ──
-    head_pid = _find_process("head.main")
-    if head_pid:
+    head_pid = _read_pid_file(_HEAD_PID_FILE)
+    if head_pid is not None and _pid_alive(head_pid):
         print(f"Head Node:  running (pid={head_pid})")
+    elif head_pid is not None:
+        print("Head Node:  stale PID file (not running)")
     else:
         print("Head Node:  not running")
 
@@ -372,8 +375,13 @@ def _cmd_token(args: argparse.Namespace) -> None:
 
 def _cmd_bot(args: argparse.Namespace) -> None:
     """Delegate to the v1 bot entry point."""
-    from head.main import cli_main
-    cli_main()
+    _CODECAST_DIR.mkdir(parents=True, exist_ok=True)
+    _HEAD_PID_FILE.write_text(str(os.getpid()))
+    try:
+        from head.main import cli_main
+        cli_main()
+    finally:
+        _HEAD_PID_FILE.unlink(missing_ok=True)
 
 
 def _cmd_webui(args: argparse.Namespace) -> None:
