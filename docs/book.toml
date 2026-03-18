@@ -3,10 +3,10 @@ title = "Codecast"
 description = "Codecast CLI control via Discord/Telegram bots"
 authors = ["Codecast Contributors"]
 language = "en"
-src = "docs/en"
+src = "en"
 
 [build]
-build-dir = "book"
+build-dir = "../book"
 create-missing = false
 
 [output.html]

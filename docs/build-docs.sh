@@ -2,9 +2,9 @@
 # Build mdBook documentation (Chinese + English)
 #
 # Output layout:
-#   book/          <- English (default)
-#   book/en/       <- English (explicit, copy of root)
-#   book/zh/       <- Chinese
+#   ../book/          <- English (default)
+#   ../book/en/       <- English (explicit, copy of root)
+#   ../book/zh/       <- Chinese
 #
 # Usage: ./build-docs.sh
 set -e
@@ -12,9 +12,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-rm -rf book
+rm -rf ../book
 
-# ── 1. Build English → book/ (default root, must be first) ──
+# ── 1. Build English → ../book/ (default root, must be first) ──
 echo "==> Building default (English) at root..."
 cat > book.toml <<'EOF'
 [book]
@@ -22,10 +22,10 @@ title = "Codecast"
 description = "Codecast CLI control via Discord/Telegram bots"
 authors = ["Codecast Contributors"]
 language = "en"
-src = "docs/en"
+src = "en"
 
 [build]
-build-dir = "book"
+build-dir = "../book"
 create-missing = false
 
 [output.html]
@@ -36,7 +36,7 @@ additional-js  = ["theme/lang-selector.js"]
 EOF
 mdbook build
 
-# ── 2. Build Chinese → book/zh/ ──
+# ── 2. Build Chinese → ../book/zh/ ──
 echo "==> Building Chinese documentation..."
 cat > book.toml <<'EOF'
 [book]
@@ -44,10 +44,10 @@ title = "Codecast"
 description = "通过 Discord/Telegram Bot 远程控制 Claude CLI"
 authors = ["Codecast Contributors"]
 language = "zh"
-src = "docs/zh"
+src = "zh"
 
 [build]
-build-dir = "book/zh"
+build-dir = "../book/zh"
 create-missing = false
 
 [output.html]
@@ -58,14 +58,14 @@ additional-js  = ["theme/lang-selector.js"]
 EOF
 mdbook build
 
-# ── 3. Copy root English → book/en/ ──
-echo "==> Creating book/en/ (copy from root)..."
-mkdir -p book/en
-for item in book/*; do
+# ── 3. Copy root English → ../book/en/ ──
+echo "==> Creating ../book/en/ (copy from root)..."
+mkdir -p ../book/en
+for item in ../book/*; do
     base="$(basename "$item")"
     [ "$base" = "zh" ] && continue
     [ "$base" = "en" ] && continue
-    cp -r "$item" "book/en/$base"
+    cp -r "$item" "../book/en/$base"
 done
 
 # ── 4. Restore book.toml ──
@@ -75,10 +75,10 @@ title = "Codecast"
 description = "Codecast CLI control via Discord/Telegram bots"
 authors = ["Codecast Contributors"]
 language = "en"
-src = "docs/en"
+src = "en"
 
 [build]
-build-dir = "book"
+build-dir = "../book"
 create-missing = false
 
 [output.html]
@@ -89,6 +89,6 @@ additional-js  = ["theme/lang-selector.js"]
 EOF
 
 echo "==> Done!"
-echo "    book/        English (default)"
-echo "    book/en/     English"
-echo "    book/zh/     Chinese"
+echo "    ../book/        English (default)"
+echo "    ../book/en/     English"
+echo "    ../book/zh/     Chinese"

@@ -330,6 +330,7 @@ async fn run_claude_process(
         message.to_string(),
         "--output-format".to_string(),
         "stream-json".to_string(),
+        "--include-partial-messages".to_string(),
         "--verbose".to_string(),
     ];
 
@@ -430,20 +431,22 @@ async fn run_claude_process(
                 }
             }
 
-            // Convert to StreamEvent
-            let event = convert_claude_message(&parsed);
+            // Convert to StreamEvent(s)
+            let events = convert_claude_message(&parsed);
 
-            // Capture SDK session ID
-            if let Some(sid) = event.session_id() {
-                let mut sessions_guard = sessions.lock().await;
-                if let Some(session) = sessions_guard.get_mut(session_id) {
-                    session.sdk_session_id = Some(sid.to_string());
+            for event in events {
+                // Capture SDK session ID
+                if let Some(sid) = event.session_id() {
+                    let mut sessions_guard = sessions.lock().await;
+                    if let Some(session) = sessions_guard.get_mut(session_id) {
+                        session.sdk_session_id = Some(sid.to_string());
+                    }
                 }
-            }
 
-            // Send event to the channel
-            if tx.send(event).await.is_err() {
-                break;
+                // Send event to the channel
+                if tx.send(event).await.is_err() {
+                    break;
+                }
             }
         }
     }

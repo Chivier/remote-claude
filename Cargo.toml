@@ -6,7 +6,7 @@ description = "Codecast daemon - manages Claude CLI sessions via JSON-RPC over H
 
 [[bin]]
 name = "codecast-daemon"
-path = "src/main.rs"
+path = "src/daemon/main.rs"
 
 [dependencies]
 axum = { version = "0.8", features = ["macros"] }

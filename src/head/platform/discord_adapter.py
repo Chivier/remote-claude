@@ -26,6 +26,8 @@ from head.file_pool import FilePool, FileEntry
 from head.message_formatter import (
     split_message,
     compress_tool_messages,
+    format_activity_message,
+    format_tool_line,
     format_error,
     display_mode,
 )
@@ -633,11 +635,35 @@ class DiscordAdapter:
                     await self.send_message(channel_id, format_error(f"File upload failed: {e}"))
                     return
 
-            buffer = ""
-            current_handle: Optional[MessageHandle] = None
-            last_update = time.time()
-            tool_batch: list[dict] = []
-            tool_batch_size = engine.config.tool_batch_size
+            # Activity message state (tools + thinking)
+            activity_msg: Optional[MessageHandle] = None
+            activity_lines: list[str] = []
+            thinking_buf: str = ""
+            last_activity_update = time.time()
+
+            STREAM_UPDATE_INTERVAL = 1.5
+
+            async def update_activity():
+                nonlocal activity_msg, activity_lines, last_activity_update
+                content = format_activity_message(activity_lines, thinking_buf, cursor=True)
+                if not content.strip():
+                    return
+                if len(content) > 1900 and activity_msg is not None:
+                    await finalize_activity()
+                    content = format_activity_message(activity_lines, thinking_buf, cursor=True)
+                if activity_msg is None:
+                    activity_msg = await self.send_message(channel_id, content)
+                else:
+                    await self.edit_message(activity_msg, content)
+                last_activity_update = time.time()
+
+            async def finalize_activity():
+                nonlocal activity_msg, activity_lines
+                if activity_msg is not None and activity_lines:
+                    final = format_activity_message(activity_lines, "", cursor=False)
+                    await self.edit_message(activity_msg, final)
+                activity_msg = None
+                activity_lines = []
 
             async for event in engine.daemon.send_message(local_port, session.daemon_session_id, text):
                 event_type = event.get("type", "")
@@ -646,52 +672,30 @@ class DiscordAdapter:
                 if event_type == "ping":
                     continue
 
-                # Flush tool batch before any non-tool event
-                if event_type != "tool_use" and tool_batch:
-                    batch_text = compress_tool_messages(tool_batch)
-                    await self.send_message(channel_id, batch_text)
-                    tool_batch = []
+                if event_type == "tool_use":
+                    tool_name = event.get("tool", "unknown")
+                    event_tracker["tool_name"] = tool_name
+                    activity_lines.append(format_tool_line(event))
+                    thinking_buf = ""
+                    await update_activity()
 
-                if event_type == "partial":
+                elif event_type == "partial":
                     content = event.get("content", "")
                     if content:
-                        buffer += content
-                        event_tracker["partial_len"] = len(buffer)
+                        thinking_buf += content
+                        event_tracker["partial_len"] = len(thinking_buf)
                         now = time.time()
-
-                        if now - last_update >= STREAM_UPDATE_INTERVAL:
-                            if current_handle is None:
-                                current_handle = await self.send_message(channel_id, buffer + " \u258c")
-                            else:
-                                if len(buffer) > STREAM_BUFFER_FLUSH_SIZE:
-                                    await self.edit_message(current_handle, buffer)
-                                    buffer = ""
-                                    event_tracker["partial_len"] = 0
-                                    current_handle = None
-                                else:
-                                    await self.edit_message(current_handle, buffer + " \u258c")
-                            last_update = now
+                        if now - last_activity_update >= STREAM_UPDATE_INTERVAL:
+                            await update_activity()
 
                 elif event_type == "text":
                     content = event.get("content", "")
                     if content:
-                        if current_handle:
-                            await self.edit_message(current_handle, content)
-                            current_handle = None
-                            buffer = ""
-                        else:
-                            for chunk in split_message(content):
-                                await self.send_message(channel_id, chunk)
-                        event_tracker["partial_len"] = 0
-
-                elif event_type == "tool_use":
-                    tool_name = event.get("tool", "unknown")
-                    event_tracker["tool_name"] = tool_name
-                    tool_batch.append(event)
-                    if len(tool_batch) >= tool_batch_size:
-                        batch_text = compress_tool_messages(tool_batch)
-                        await self.send_message(channel_id, batch_text)
-                        tool_batch = []
+                        thinking_buf = ""
+                        await finalize_activity()
+                        for chunk in split_message(content):
+                            await self.send_message(channel_id, chunk)
+                    event_tracker["partial_len"] = 0
 
                 elif event_type == "result":
                     sdk_session_id = event.get("session_id")
@@ -701,7 +705,6 @@ class DiscordAdapter:
                 elif event_type == "system":
                     model = event.get("model")
                     if model and event.get("subtype") == "init":
-                        # Re-resolve session (may have been updated)
                         current_session = engine.router.resolve(channel_id)
                         daemon_sid = current_session.daemon_session_id if current_session else ""
                         if daemon_sid not in self._init_shown:
@@ -724,18 +727,9 @@ class DiscordAdapter:
                     error_msg = event.get("message", "Unknown error")
                     await self.send_message(channel_id, format_error(error_msg))
 
-            # Flush remaining tool batch
-            if tool_batch:
-                batch_text = compress_tool_messages(tool_batch)
-                await self.send_message(channel_id, batch_text)
-
-            # Flush remaining buffer
-            if buffer:
-                if current_handle:
-                    await self.edit_message(current_handle, buffer)
-                else:
-                    for chunk in split_message(buffer):
-                        await self.send_message(channel_id, chunk)
+            # Finalize any remaining activity message
+            thinking_buf = ""
+            await finalize_activity()
 
         except DaemonConnectionError as e:
             await self.send_message(channel_id, format_error(f"Lost connection to daemon: {e}"))

@@ -277,8 +277,8 @@ class TestForwardMessageBatching:
     """
 
     @pytest.mark.asyncio
-    async def test_single_tool_event_sent_individually(self, make_bot, mock_router, mock_daemon):
-        """A single tool_use event (below batch size) is flushed at stream end."""
+    async def test_single_tool_event_in_activity_message(self, make_bot, mock_router, mock_daemon):
+        """A single tool_use event produces an activity message."""
         bot = make_bot(tool_batch_size=3)
         mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
 
@@ -289,16 +289,20 @@ class TestForwardMessageBatching:
         mock_daemon.send_message = mock_stream
         await bot.handle_input("discord:100", "hello")
 
+        # Activity message is sent then finalized via edit
         texts = bot.get_all_texts()
-        tool_texts = [t for t in texts if "[Tool:" in t]
-        assert len(tool_texts) == 1
-        # Single event uses format_tool_use (not compressed header)
-        assert "**[Tool: Read]**" in tool_texts[0]
-        assert "**[Tools:" not in tool_texts[0]
+        assert len(texts) == 1  # One activity message
+        assert "Tool: 1 call" in texts[0]
+        assert "`Read`" in texts[0]
+        # Finalized via edit (cursor removed)
+        edits = bot.edited_messages
+        assert len(edits) >= 1
+        final_edit = edits[-1][1]
+        assert "▌" not in final_edit
 
     @pytest.mark.asyncio
-    async def test_batch_flushes_at_batch_size(self, make_bot, mock_router, mock_daemon):
-        """Exactly batch_size tool events produce one compressed message."""
+    async def test_multiple_tools_accumulated_in_activity(self, make_bot, mock_router, mock_daemon):
+        """Multiple tool events accumulate in a single activity message."""
         bot = make_bot(tool_batch_size=3)
         mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
 
@@ -311,15 +315,21 @@ class TestForwardMessageBatching:
         mock_daemon.send_message = mock_stream
         await bot.handle_input("discord:100", "hello")
 
+        # All tools in one activity message, updated via edits
         texts = bot.get_all_texts()
-        tool_texts = [t for t in texts if "Tool" in t]
-        assert len(tool_texts) == 1
-        assert "**[Tools: 3 calls]**" in tool_texts[0]
+        assert len(texts) == 1  # One activity message (created on first tool)
+        edits = bot.edited_messages
+        # Final edit should show all 3 tools
+        final_edit = edits[-1][1]
+        assert "Tools: 3 calls" in final_edit
+        assert "`Read`" in final_edit
+        assert "`Edit`" in final_edit
+        assert "`Bash`" in final_edit
 
     @pytest.mark.asyncio
-    async def test_batch_flushes_before_text_event(self, make_bot, mock_router, mock_daemon):
-        """Accumulated tool events flush when a text event arrives."""
-        bot = make_bot(tool_batch_size=15)  # Large batch — won't fill up
+    async def test_activity_finalized_before_text(self, make_bot, mock_router, mock_daemon):
+        """Activity message is finalized before text result is sent."""
+        bot = make_bot(tool_batch_size=15)
         mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
 
         async def mock_stream(*a, **kw):
@@ -332,15 +342,10 @@ class TestForwardMessageBatching:
         await bot.handle_input("discord:100", "hello")
 
         texts = bot.get_all_texts()
-        # Tool batch flushed before text, then text sent
-        tool_texts = [t for t in texts if "Tools:" in t]
-        text_texts = [t for t in texts if "Done editing." in t]
-        assert len(tool_texts) == 1
-        assert len(text_texts) == 1
-        # Tool message must appear before text message
-        tool_idx = texts.index(tool_texts[0])
-        text_idx = texts.index(text_texts[0])
-        assert tool_idx < text_idx
+        # First message: activity (tools), second message: text result
+        assert len(texts) == 2
+        assert "Tool" in texts[0]
+        assert "Done editing." in texts[1]
 
     @pytest.mark.asyncio
     async def test_text_events_never_batched(self, make_bot, mock_router, mock_daemon):
@@ -414,8 +419,8 @@ class TestForwardMessageBatching:
         assert any("2" in t for t in texts)
 
     @pytest.mark.asyncio
-    async def test_tool_batch_flushed_before_error(self, make_bot, mock_router, mock_daemon):
-        """Tool batch is flushed before an error event is sent."""
+    async def test_tools_and_error_ordering(self, make_bot, mock_router, mock_daemon):
+        """Tools appear in activity message before error message."""
         bot = make_bot(tool_batch_size=15)
         mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
 
@@ -433,8 +438,8 @@ class TestForwardMessageBatching:
         assert tool_idx < err_idx
 
     @pytest.mark.asyncio
-    async def test_tool_batch_flushed_before_queued(self, make_bot, mock_router, mock_daemon):
-        """Tool batch is flushed before a queued event."""
+    async def test_tools_and_queued_ordering(self, make_bot, mock_router, mock_daemon):
+        """Activity message with tools appears before queued message."""
         bot = make_bot(tool_batch_size=15)
         mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
 
@@ -452,7 +457,7 @@ class TestForwardMessageBatching:
 
     @pytest.mark.asyncio
     async def test_tool_batch_flushed_before_system(self, make_bot, mock_router, mock_daemon):
-        """Tool batch is flushed before a system event."""
+        """Tool activity message appears before system event message."""
         bot = make_bot(tool_batch_size=15)
         mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
 
@@ -470,8 +475,8 @@ class TestForwardMessageBatching:
         assert tool_idx < sys_idx
 
     @pytest.mark.asyncio
-    async def test_multiple_batches_when_exceeding_size(self, make_bot, mock_router, mock_daemon):
-        """When more tool events than batch size arrive, multiple batches are sent."""
+    async def test_many_tools_accumulated(self, make_bot, mock_router, mock_daemon):
+        """All tool events accumulate in a single activity message regardless of count."""
         bot = make_bot(tool_batch_size=3)
         mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
 
@@ -483,20 +488,20 @@ class TestForwardMessageBatching:
         mock_daemon.send_message = mock_stream
         await bot.handle_input("discord:100", "hello")
 
+        # All tools in one activity message
         texts = bot.get_all_texts()
-        tool_texts = [t for t in texts if "Tool" in t]
-        # 7 events with batch_size=3: batch of 3, batch of 3, remainder of 1
-        assert len(tool_texts) == 3
-        assert "**[Tools: 3 calls]**" in tool_texts[0]
-        assert "**[Tools: 3 calls]**" in tool_texts[1]
-        # Last one is a single event — uses format_tool_use
-        assert "**[Tool: Tool6]**" in tool_texts[2]
+        assert len(texts) == 1
+        edits = bot.edited_messages
+        final_edit = edits[-1][1]
+        assert "Tools: 7 calls" in final_edit
+        for i in range(7):
+            assert f"`Tool{i}`" in final_edit
 
     @pytest.mark.asyncio
     async def test_interleaved_tool_and_text(self, make_bot, mock_router, mock_daemon):
         """
-        Tool-text-tool-text pattern: each tool group is flushed before its
-        following text, and text events are sent individually.
+        Tool-text-tool-text pattern: activity message is finalized before text,
+        then a new activity message starts for the next tool group.
         """
         bot = make_bot(tool_batch_size=15)
         mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
@@ -514,19 +519,19 @@ class TestForwardMessageBatching:
 
         texts = bot.get_all_texts()
         # Expected order:
-        # 1. compressed tool batch (Read+Edit)
-        # 2. "Edited file1."
-        # 3. single tool (Read file2) — flushed before "Read file2."
+        # 1. activity message (Read+Edit) — created on first tool
+        # 2. "Edited file1." — text result
+        # 3. activity message (Read file2) — new activity msg for second group
         # 4. "Read file2."
-        assert "**[Tools: 2 calls]**" in texts[0]
+        assert len(texts) == 4
+        assert "Tool" in texts[0]
         assert "Edited file1." in texts[1]
-        assert "**[Tool: Read]**" in texts[2]
-        assert "file2" in texts[2]
+        assert "Tool" in texts[2]
         assert "Read file2." in texts[3]
 
     @pytest.mark.asyncio
-    async def test_batch_size_one_disables_batching(self, make_bot, mock_router, mock_daemon):
-        """With tool_batch_size=1, every tool event is sent immediately (no compression)."""
+    async def test_all_tools_in_single_activity(self, make_bot, mock_router, mock_daemon):
+        """With any batch_size, all consecutive tools go into one activity message."""
         bot = make_bot(tool_batch_size=1)
         mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
 
@@ -540,12 +545,11 @@ class TestForwardMessageBatching:
         await bot.handle_input("discord:100", "hello")
 
         texts = bot.get_all_texts()
-        tool_texts = [t for t in texts if "[Tool:" in t]
-        assert len(tool_texts) == 3
-        # Each is a single-event message (format_tool_use format)
-        assert "**[Tool: Read]**" in tool_texts[0]
-        assert "**[Tool: Edit]**" in tool_texts[1]
-        assert "**[Tool: Bash]**" in tool_texts[2]
+        # All tools in one activity message (batch_size no longer applies)
+        assert len(texts) == 1
+        edits = bot.edited_messages
+        final_edit = edits[-1][1]
+        assert "Tools: 3 calls" in final_edit
 
     @pytest.mark.asyncio
     async def test_result_event_not_sent_as_message(self, make_bot, mock_router, mock_daemon):
@@ -583,8 +587,8 @@ class TestForwardMessageBatching:
         assert texts == ["Hello"]
 
     @pytest.mark.asyncio
-    async def test_remaining_tool_batch_flushed_at_stream_end(self, make_bot, mock_router, mock_daemon):
-        """Tool events at the end of the stream (no subsequent non-tool event) are still flushed."""
+    async def test_remaining_tools_finalized_at_stream_end(self, make_bot, mock_router, mock_daemon):
+        """Tool activity message is finalized at stream end even without text event."""
         bot = make_bot(tool_batch_size=15)
         mock_router.register("discord:100", "gpu-1", "/path", "sess-001")
 
@@ -597,9 +601,12 @@ class TestForwardMessageBatching:
         await bot.handle_input("discord:100", "hello")
 
         texts = bot.get_all_texts()
-        tool_texts = [t for t in texts if "Tool" in t]
-        assert len(tool_texts) == 1
-        assert "**[Tools: 2 calls]**" in tool_texts[0]
+        assert len(texts) == 1
+        # Finalized edit should have tools without cursor
+        edits = bot.edited_messages
+        final_edit = edits[-1][1]
+        assert "Tools: 2 calls" in final_edit
+        assert "▌" not in final_edit
 
 
 # ═══════════════════════════════════════════════════════════

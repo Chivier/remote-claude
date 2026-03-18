@@ -309,6 +309,65 @@ def compress_tool_messages(events: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def format_activity_message(
+    tool_lines: list[str],
+    thinking: str = "",
+    cursor: bool = True,
+) -> str:
+    """
+    Build an activity message showing accumulated tool calls and optional
+    thinking snippet.
+
+    Args:
+        tool_lines: Formatted tool call summary lines (one per tool).
+        thinking: Current thinking/partial text snippet (last ~200 chars).
+        cursor: Whether to show a blinking cursor indicator.
+
+    Returns:
+        Formatted activity message string.
+    """
+    parts: list[str] = []
+
+    if tool_lines:
+        count = len(tool_lines)
+        if count == 1:
+            parts.append(f"**[Tool: 1 call]**")
+        else:
+            parts.append(f"**[Tools: {count} calls]**")
+        for line in tool_lines:
+            parts.append(line)
+
+    if thinking:
+        snippet = thinking[-200:] if len(thinking) > 200 else thinking
+        # Show last line fragment for readability
+        parts.append(f"> *...{snippet.strip()}*")
+
+    if cursor:
+        parts.append("▌")
+
+    return "\n".join(parts)
+
+
+def format_tool_line(event: dict) -> str:
+    """
+    Format a single tool_use event into a compact one-liner for activity messages.
+
+    Returns a line like: ``  `WebFetch` — https://api.github.com/...``
+    """
+    tool = event.get("tool", "unknown")
+    message = event.get("message", "")
+    input_data = event.get("input")
+
+    if message:
+        detail = _truncate(message, 120)
+        return f"  `{tool}` — {detail}"
+    elif input_data:
+        detail = _truncate(str(input_data), 120)
+        return f"  `{tool}` — {detail}"
+    else:
+        return f"  `{tool}`"
+
+
 def _truncate(text: str, max_len: int) -> str:
     """Truncate text with ellipsis."""
     if len(text) <= max_len:

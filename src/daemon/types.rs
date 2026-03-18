@@ -179,12 +179,15 @@ pub struct QueueStats {
 // ─── Claude CLI stdout JSON types ───
 // These are raw JSON from `claude --output-format stream-json`
 
-/// Convert raw Claude CLI stdout JSON into our StreamEvent
-pub fn convert_claude_message(msg: &Value) -> StreamEvent {
+/// Convert raw Claude CLI stdout JSON into our StreamEvent(s).
+///
+/// Returns a Vec because an `assistant` message may contain multiple tool_use
+/// blocks that each need their own event, plus a text block.
+pub fn convert_claude_message(msg: &Value) -> Vec<StreamEvent> {
     let msg_type = msg.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
     match msg_type {
-        "system" => StreamEvent::System {
+        "system" => vec![StreamEvent::System {
             subtype: msg
                 .get("subtype")
                 .and_then(|v| v.as_str())
@@ -195,33 +198,32 @@ pub fn convert_claude_message(msg: &Value) -> StreamEvent {
                 .map(String::from),
             model: msg.get("model").and_then(|v| v.as_str()).map(String::from),
             raw: Some(msg.clone()),
-        },
+        }],
 
         "assistant" => {
+            let mut events = Vec::new();
+
             if let Some(content) = msg
                 .get("message")
                 .and_then(|m| m.get("content"))
                 .and_then(|c| c.as_array())
             {
-                // Check for tool_use blocks first
-                let tool_blocks: Vec<&Value> = content
-                    .iter()
-                    .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
-                    .collect();
-
-                if !tool_blocks.is_empty() {
-                    return StreamEvent::ToolUse {
-                        tool: tool_blocks[0]
-                            .get("name")
-                            .and_then(|v| v.as_str())
-                            .map(String::from),
-                        input: tool_blocks[0].get("input").cloned(),
-                        message: None,
-                        raw: Some(msg.clone()),
-                    };
+                // Emit ALL tool_use blocks (not just the first)
+                for block in content.iter() {
+                    if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                        events.push(StreamEvent::ToolUse {
+                            tool: block
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                            input: block.get("input").cloned(),
+                            message: None,
+                            raw: None,
+                        });
+                    }
                 }
 
-                // Then check for text blocks
+                // Then emit text blocks
                 let text_blocks: Vec<&Value> = content
                     .iter()
                     .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("text"))
@@ -233,61 +235,77 @@ pub fn convert_claude_message(msg: &Value) -> StreamEvent {
                         .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
                         .collect::<Vec<_>>()
                         .join("");
-                    return StreamEvent::Text {
+                    events.push(StreamEvent::Text {
                         content: Some(text),
-                        raw: Some(msg.clone()),
-                    };
+                        raw: None,
+                    });
                 }
             }
 
-            StreamEvent::Text {
-                content: Some(String::new()),
-                raw: Some(msg.clone()),
+            if events.is_empty() {
+                // Fallback: empty text event
+                events.push(StreamEvent::Text {
+                    content: Some(String::new()),
+                    raw: None,
+                });
             }
+
+            events
         }
 
         "stream_event" => {
             if let Some(event) = msg.get("event") {
                 let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
-                if event_type == "content_block_delta" {
-                    if let Some(delta) = event.get("delta") {
-                        if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
-                            return StreamEvent::Partial {
-                                content: Some(text.to_string()),
-                                raw: None,
-                            };
+                match event_type {
+                    "content_block_delta" => {
+                        if let Some(delta) = event.get("delta") {
+                            // Text streaming deltas → forward as Partial
+                            if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
+                                return vec![StreamEvent::Partial {
+                                    content: Some(text.to_string()),
+                                    raw: None,
+                                }];
+                            }
+                            // partial_json (tool input streaming) → drop, it's noise
+                            if delta.get("partial_json").is_some() {
+                                return vec![];
+                            }
                         }
-                        if let Some(pj) = delta.get("partial_json").and_then(|v| v.as_str()) {
-                            return StreamEvent::Partial {
-                                content: Some(pj.to_string()),
-                                raw: None,
-                            };
-                        }
+                        vec![]
                     }
-                }
 
-                if event_type == "content_block_start" {
-                    if let Some(cb) = event.get("content_block") {
-                        if cb.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
-                            return StreamEvent::ToolUse {
-                                tool: cb.get("name").and_then(|v| v.as_str()).map(String::from),
-                                input: None,
-                                message: None,
-                                raw: Some(msg.clone()),
-                            };
+                    "content_block_start" => {
+                        if let Some(cb) = event.get("content_block") {
+                            if cb.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
+                                return vec![StreamEvent::ToolUse {
+                                    tool: cb.get("name").and_then(|v| v.as_str()).map(String::from),
+                                    input: None,
+                                    message: None,
+                                    raw: None,
+                                }];
+                            }
                         }
+                        // content_block_start for text → ignore (text comes via deltas)
+                        vec![]
                     }
-                }
-            }
 
-            StreamEvent::Partial {
-                content: Some(String::new()),
-                raw: Some(msg.clone()),
+                    // Internal lifecycle events → drop
+                    "content_block_stop" | "message_start" | "message_stop" | "message_delta" => {
+                        vec![]
+                    }
+
+                    _ => vec![], // Unknown stream_event subtypes → drop
+                }
+            } else {
+                vec![]
             }
         }
 
-        "tool_progress" => StreamEvent::ToolUse {
+        // Tool results from user messages are internal — don't forward
+        "user" => vec![],
+
+        "tool_progress" => vec![StreamEvent::ToolUse {
             tool: msg
                 .get("tool_name")
                 .and_then(|v| v.as_str())
@@ -295,21 +313,17 @@ pub fn convert_claude_message(msg: &Value) -> StreamEvent {
             input: None,
             message: msg.get("status").and_then(|v| v.as_str()).map(String::from),
             raw: Some(msg.clone()),
-        },
+        }],
 
-        "result" => StreamEvent::Result {
+        "result" => vec![StreamEvent::Result {
             session_id: msg
                 .get("session_id")
                 .and_then(|v| v.as_str())
                 .map(String::from),
             raw: Some(msg.clone()),
-        },
+        }],
 
-        _ => StreamEvent::System {
-            subtype: None,
-            session_id: None,
-            model: None,
-            raw: Some(msg.clone()),
-        },
+        // Unknown types → drop (was previously System which triggered flushes)
+        _ => vec![],
     }
 }

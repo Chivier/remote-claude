@@ -42,6 +42,7 @@ Issues = "https://github.com/Chivier/codecast/issues"
 codecast = "head.cli:main"
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["head*"]
 
 [tool.setuptools.package-data]
