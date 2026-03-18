@@ -298,7 +298,7 @@ class SSHManager:
         machine = self._get_machine(machine_id)
         install_dir = self.config.daemon.install_dir
 
-        # Check if a daemon is already listening on the expected port
+        # Check if THIS user's daemon is already healthy (read port from ~/  which is per-user)
         check_port = await self._read_daemon_port_remote(conn, machine.daemon_port)
         health_result = await conn.run(
             f"curl -sf http://127.0.0.1:{check_port}/rpc "
@@ -310,21 +310,21 @@ class SSHManager:
             logger.info(f"Daemon already healthy on {machine_id} (port {check_port})")
             return
 
-        # Daemon not responding — check if a stale process exists
-        result = await conn.run(f"pgrep -f 'codecast-daemon' || true")
+        # Daemon not responding — check for stale processes owned by THIS user only
+        result = await conn.run("pgrep -u $(whoami) -f 'codecast-daemon' || true")
         stdout = result.stdout.strip() if result.stdout else ""
 
         if stdout:
-            # Try graceful shutdown first (SIGTERM), then wait
+            # Only kill our own stale daemon — never touch other users' processes
             pids = stdout.splitlines()[0]
-            logger.warning(f"Daemon on {machine_id} (PID: {pids}) is unresponsive, sending SIGTERM...")
+            logger.warning(f"Own daemon on {machine_id} (PID: {pids}) is unresponsive, sending SIGTERM...")
             await conn.run(f"kill {pids} 2>/dev/null || true")
             await asyncio.sleep(2)
 
             # Check if it's gone
             recheck = await conn.run(f"kill -0 {pids} 2>/dev/null && echo 'alive' || echo 'dead'")
             if "alive" in (recheck.stdout or ""):
-                logger.warning(f"Daemon on {machine_id} (PID: {pids}) didn't stop, sending SIGKILL...")
+                logger.warning(f"Own daemon on {machine_id} (PID: {pids}) didn't stop, sending SIGKILL...")
                 await conn.run(f"kill -9 {pids} 2>/dev/null || true")
                 await asyncio.sleep(1)
 
