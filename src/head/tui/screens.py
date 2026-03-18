@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -43,7 +46,8 @@ def _load_config(config_path: str):
     try:
         from head.config_v2 import load_config_v2
         return load_config_v2(config_path)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to load config from %s: %s", config_path, exc)
         return None
 
 

@@ -291,12 +291,24 @@ def _cmd_status(args: argparse.Namespace) -> None:
     # ── Peers ──
     try:
         from head.config_v2 import load_config_v2
-        cfg_path = args.config or str(Path.home() / ".codecast" / "config.yaml")
-        cfg = load_config_v2(cfg_path)
-        peers = getattr(cfg, "peers", []) or []
-        print(f"Peers:      {len(peers)} machines configured")
-    except Exception:
-        print("Peers:      unable to load config")
+        cfg_path = args.config
+        if not cfg_path:
+            # Try ~/.codecast/config.yaml first, then ./config.yaml
+            for candidate in [
+                str(Path.home() / ".codecast" / "config.yaml"),
+                "config.yaml",
+            ]:
+                if Path(candidate).exists():
+                    cfg_path = candidate
+                    break
+        if cfg_path:
+            cfg = load_config_v2(cfg_path)
+            peers = getattr(cfg, "peers", {}) or {}
+            print(f"Peers:      {len(peers)} machines configured")
+        else:
+            print("Peers:      no config file found")
+    except Exception as exc:
+        print(f"Peers:      unable to load config ({exc})")
 
 
 def _find_process(name: str) -> int | None:
