@@ -1,0 +1,50 @@
+# Multi-user integration test
+# Verifies two users can run independent daemons on the same machine.
+#
+# Usage:
+#   docker compose -f tests/integration/docker-compose.multiuser.yml up --build
+
+FROM rust:1.85-bookworm AS daemon-builder
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock* ./
+COPY src/ src/
+
+RUN cargo build --release
+
+# ---
+
+FROM python:3.12-bookworm
+
+# Install curl for healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends curl procps lsof && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create two test users
+RUN useradd -m alice && useradd -m bob
+
+# Copy pre-built daemon binary
+COPY --from=daemon-builder /build/target/release/codecast-daemon /usr/local/bin/codecast-daemon
+
+# Install mock Claude CLI
+COPY tests/integration/mock-claude.sh /usr/local/bin/claude
+RUN chmod +x /usr/local/bin/claude
+
+WORKDIR /app
+COPY . /app/
+
+# Install test deps
+RUN pip install --no-cache-dir pytest pytest-asyncio aiohttp
+
+# Create per-user workspaces and .codecast dirs
+RUN mkdir -p /home/alice/project /home/bob/project && \
+    mkdir -p /home/alice/.codecast /home/bob/.codecast && \
+    chown -R alice:alice /home/alice && \
+    chown -R bob:bob /home/bob
+
+ENV PYTHONUNBUFFERED=1
+
+COPY tests/integration/run-multiuser-tests.sh /app/tests/integration/run-multiuser-tests.sh
+RUN chmod +x /app/tests/integration/run-multiuser-tests.sh
+
+CMD ["/app/tests/integration/run-multiuser-tests.sh"]

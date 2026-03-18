@@ -1,0 +1,16 @@
+# Docker Compose for multi-user isolation tests
+#
+# Verifies that two users on the same machine get independent daemons.
+#
+# Usage:
+#   docker compose -f tests/integration/docker-compose.multiuser.yml up --build --abort-on-container-exit
+
+services:
+  multiuser:
+    build:
+      context: ../..
+      dockerfile: tests/integration/Dockerfile.multiuser
+    container_name: codecast-multiuser
+    environment:
+      - RUST_LOG=info
+      - PYTHONUNBUFFERED=1

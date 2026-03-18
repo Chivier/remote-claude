@@ -79,7 +79,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     sub_bot.add_argument("bot_action", nargs="?", default="start", help="Bot action (default: start)")
 
     # webui -----------------------------------------------------------
-    subparsers.add_parser("webui", help="Start the web UI")
+    sub_webui = subparsers.add_parser("webui", help="Start/stop the web UI")
+    sub_webui.add_argument(
+        "webui_action", nargs="?", default="start",
+        choices=["start", "stop", "status"],
+        help="Action to perform (default: start)",
+    )
+    sub_webui.add_argument("--port", "-p", type=int, default=None, help="WebUI port")
+    sub_webui.add_argument("--bind", "-b", default=None, help="Bind address")
 
     return parser.parse_args(argv)
 
@@ -88,13 +95,44 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 # Port file helpers
 # ---------------------------------------------------------------------------
 
-_PORT_FILE = Path.home() / ".codecast" / "daemon.port"
+_CODECAST_DIR = Path.home() / ".codecast"
+_PORT_FILE = _CODECAST_DIR / "daemon.port"
+_WEBUI_PID_FILE = _CODECAST_DIR / "webui.pid"
+_WEBUI_PORT_FILE = _CODECAST_DIR / "webui.port"
 
 
 def _read_port_file() -> int | None:
     """Return the daemon port from the port file, or None."""
     try:
         return int(_PORT_FILE.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _port_available(port: int, host: str = "127.0.0.1") -> bool:
+    """Return True if *port* on *host* is available for binding."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+            return True
+        except OSError:
+            return False
+
+
+def _pid_alive(pid: int) -> bool:
+    """Return True if a process with *pid* exists."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
+
+def _read_pid_file(path: Path) -> int | None:
+    """Read a PID from a file, returning None if missing or invalid."""
+    try:
+        return int(path.read_text().strip())
     except (FileNotFoundError, ValueError):
         return None
 
@@ -210,30 +248,70 @@ def _cmd_update(args: argparse.Namespace) -> None:
 
 
 def _cmd_status(args: argparse.Namespace) -> None:
-    """Show daemon status, Claude availability, and peer count."""
-    port = _read_port_file()
-    if port is None:
-        print("Daemon: not running (no port file)")
-    elif _daemon_healthy(port):
-        print(f"Daemon: running on port {port}")
+    """Show status of all codecast components."""
+    # ── Head Node ──
+    head_pid = _find_process("head.main")
+    if head_pid:
+        print(f"Head Node:  running (pid={head_pid})")
     else:
-        print(f"Daemon: port file exists (port {port}) but not responding")
+        print("Head Node:  not running")
 
-    # Claude CLI availability
-    claude_available = subprocess.run(
-        ["which", "claude"], capture_output=True
-    ).returncode == 0
-    print(f"Claude CLI: {'available' if claude_available else 'not found'}")
+    # ── Daemon ──
+    port = _read_port_file()
+    daemon_pid = _find_process("codecast-daemon")
+    if port is not None and _daemon_healthy(port):
+        pid_part = f" (pid={daemon_pid})" if daemon_pid else ""
+        print(f"Daemon:     running on port {port}{pid_part}")
+    elif port is not None:
+        print(f"Daemon:     port file exists (port {port}) but not responding")
+    else:
+        print("Daemon:     not running (no port file)")
 
-    # Peer count
+    # ── WebUI ──
+    webui_pid = _read_pid_file(_WEBUI_PID_FILE)
+    webui_port = _read_pid_file(_WEBUI_PORT_FILE)
+    if webui_pid is not None and _pid_alive(webui_pid):
+        print(f"WebUI:      running on http://127.0.0.1:{webui_port} (pid={webui_pid})")
+    else:
+        print("WebUI:      not running")
+
+    # ── Claude CLI ──
+    claude_result = subprocess.run(
+        ["which", "claude"], capture_output=True, text=True,
+    )
+    if claude_result.returncode == 0:
+        claude_path = claude_result.stdout.strip()
+        print(f"Claude CLI: available ({claude_path})")
+    else:
+        print("Claude CLI: not found")
+
+    # ── Peers ──
     try:
         from head.config_v2 import load_config_v2
         cfg_path = args.config or str(Path.home() / ".codecast" / "config.yaml")
         cfg = load_config_v2(cfg_path)
         peers = getattr(cfg, "peers", []) or []
-        print(f"Peers: {len(peers)}")
+        print(f"Peers:      {len(peers)} machines configured")
     except Exception:
-        print("Peers: unable to load config")
+        print("Peers:      unable to load config")
+
+
+def _find_process(name: str) -> int | None:
+    """Find a process by name using pgrep, returning its PID or None."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", name],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            # Return first PID (skip our own)
+            for line in result.stdout.strip().splitlines():
+                pid = int(line.strip())
+                if pid != os.getpid():
+                    return pid
+    except (FileNotFoundError, ValueError):
+        pass
+    return None
 
 
 def _cmd_peers(args: argparse.Namespace) -> None:
@@ -299,7 +377,18 @@ def _cmd_bot(args: argparse.Namespace) -> None:
 
 
 def _cmd_webui(args: argparse.Namespace) -> None:
-    """Start the web UI."""
+    """Dispatch webui start / stop / status."""
+    action = getattr(args, "webui_action", "start")
+    if action == "stop":
+        _webui_stop()
+    elif action == "status":
+        _webui_status()
+    else:
+        _webui_start(args)
+
+
+def _webui_start(args: argparse.Namespace) -> None:
+    """Start the web UI (foreground or background)."""
     # Load config (optional -- webui works without it)
     config = None
     try:
@@ -309,15 +398,72 @@ def _cmd_webui(args: argparse.Namespace) -> None:
     except Exception:
         pass
 
-    # Determine bind/port from config or defaults
-    port = 31949
-    bind = "127.0.0.1"
+    # Determine bind/port from args -> config -> defaults
+    port = getattr(args, "port", None) or 31949
+    bind = getattr(args, "bind", None) or "127.0.0.1"
     if config and config.bot and config.bot.webui:
-        port = config.bot.webui.port or port
-        bind = config.bot.webui.host or bind
+        if getattr(args, "port", None) is None:
+            port = config.bot.webui.port or port
+        if getattr(args, "bind", None) is None:
+            bind = config.bot.webui.host or bind
+
+    # Check if already running
+    existing_pid = _read_pid_file(_WEBUI_PID_FILE)
+    if existing_pid is not None and _pid_alive(existing_pid):
+        existing_port = _read_pid_file(_WEBUI_PORT_FILE)
+        print(f"WebUI already running (pid={existing_pid}, port={existing_port})")
+        return
+
+    # Check port availability
+    if not _port_available(port, bind):
+        print(f"Error: port {port} on {bind} is already in use.", file=sys.stderr)
+        sys.exit(1)
+
+    # Write PID and port files
+    _CODECAST_DIR.mkdir(parents=True, exist_ok=True)
+    _WEBUI_PID_FILE.write_text(str(os.getpid()))
+    _WEBUI_PORT_FILE.write_text(str(port))
 
     print(f"Starting WebUI on http://{bind}:{port}")
-    asyncio.run(_start_webui(config, bind, port))
+    try:
+        asyncio.run(_start_webui(config, bind, port))
+    finally:
+        _WEBUI_PID_FILE.unlink(missing_ok=True)
+        _WEBUI_PORT_FILE.unlink(missing_ok=True)
+
+
+def _webui_stop() -> None:
+    """Stop a running WebUI process."""
+    pid = _read_pid_file(_WEBUI_PID_FILE)
+    if pid is None:
+        print("WebUI is not running (no PID file).")
+        return
+    if not _pid_alive(pid):
+        print(f"WebUI PID {pid} is not running; cleaning up stale files.")
+        _WEBUI_PID_FILE.unlink(missing_ok=True)
+        _WEBUI_PORT_FILE.unlink(missing_ok=True)
+        return
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+        print(f"WebUI stopped (pid={pid}).")
+    except ProcessLookupError:
+        print(f"WebUI process {pid} already gone.")
+    _WEBUI_PID_FILE.unlink(missing_ok=True)
+    _WEBUI_PORT_FILE.unlink(missing_ok=True)
+
+
+def _webui_status() -> None:
+    """Show WebUI status."""
+    pid = _read_pid_file(_WEBUI_PID_FILE)
+    port = _read_pid_file(_WEBUI_PORT_FILE)
+    if pid is not None and _pid_alive(pid):
+        bind = "127.0.0.1"
+        print(f"WebUI: running on http://{bind}:{port} (pid={pid})")
+    elif pid is not None:
+        print(f"WebUI: stale PID file (pid={pid}, not running)")
+    else:
+        print("WebUI: not running")
 
 
 async def _start_webui(config, bind: str, port: int) -> None:
