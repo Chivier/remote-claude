@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 from head.engine import BotEngine
 from head.platform.protocol import MessageHandle, FileAttachment, InputHandler
-from head.config import Config, MachineConfig
+from head.config import Config, PeerConfig
 from head.session_router import SessionRouter, Session
 from head.daemon_client import DaemonClient, DaemonError, DaemonConnectionError
 
@@ -161,9 +161,9 @@ def mock_daemon():
 @pytest.fixture
 def mock_config():
     config = Config()
-    config.machines = {
-        "gpu-1": MachineConfig(id="gpu-1", host="10.0.0.1", user="user"),
-        "gpu-2": MachineConfig(id="gpu-2", host="10.0.0.2", user="user"),
+    config.peers = {
+        "gpu-1": PeerConfig(id="gpu-1", ssh_host="10.0.0.1", ssh_user="user"),
+        "gpu-2": PeerConfig(id="gpu-2", ssh_host="10.0.0.2", ssh_user="user"),
     }
     config.default_mode = "auto"
     return config

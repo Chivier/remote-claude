@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from .config_v2 import PeerConfig
+from .config import PeerConfig
 from .transport import Transport
 from .transport.http import HTTPTransport
 from .transport.ssh import SSHTransport

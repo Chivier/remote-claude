@@ -12,7 +12,7 @@ from pathlib import Path
 
 from head.engine import BotEngine
 from head.platform.protocol import MessageHandle, InputHandler
-from head.config import Config, MachineConfig, FilePoolConfig
+from head.config import Config, PeerConfig, FilePoolConfig
 from head.session_router import SessionRouter
 from head.daemon_client import DaemonClient
 from head.file_pool import FileEntry
@@ -124,8 +124,8 @@ def mock_daemon():
 @pytest.fixture
 def mock_config():
     config = Config()
-    config.machines = {
-        "gpu-1": MachineConfig(id="gpu-1", host="10.0.0.1", user="user"),
+    config.peers = {
+        "gpu-1": PeerConfig(id="gpu-1", ssh_host="10.0.0.1", ssh_user="user"),
     }
     config.file_pool = FilePoolConfig(remote_dir="/tmp/codecast/files")
     return config

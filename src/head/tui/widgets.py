@@ -99,7 +99,7 @@ class PeerTable(DataTable):
 
     def _populate(self) -> None:
         try:
-            from head.config_v2 import load_config_v2
+            from head.config import load_config_v2
 
             cfg = load_config_v2(self.config_path)
             peers = getattr(cfg, "peers", {}) or {}

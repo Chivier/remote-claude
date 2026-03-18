@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from .config import (
     Config,
-    MachineConfig,
+    PeerConfig,
     save_machine_to_config,
     remove_machine_from_config,
     parse_ssh_config,
@@ -855,17 +855,17 @@ class BotEngine:
         # Detect localhost
         is_local = _is_localhost(host)
 
-        mc = MachineConfig(
+        mc = PeerConfig(
             id=machine_id,
-            host=host,
-            user=user,
-            port=port,
+            transport="local" if is_local else "ssh",
+            ssh_host=host,
+            ssh_user=user,
+            ssh_port=port,
             proxy_jump=proxy_jump,
             password=password,
             daemon_port=daemon_port,
             node_path=node_path,
             default_paths=paths,
-            localhost=is_local,
         )
 
         # Add to runtime config
@@ -968,17 +968,17 @@ class BotEngine:
             host = entry.hostname or entry.name
             is_local = _is_localhost(host)
 
-            mc = MachineConfig(
+            mc = PeerConfig(
                 id=entry.name,
-                host=host,
-                user=entry.user or os.environ.get("USER", "root"),
-                port=entry.port,
+                transport="local" if is_local else "ssh",
+                ssh_host=host,
+                ssh_user=entry.user or os.environ.get("USER", "root"),
+                ssh_port=entry.port,
                 proxy_jump=proxy_jump,
                 password=None,
                 daemon_port=9100,
                 node_path=None,
                 default_paths=[],
-                localhost=is_local,
             )
 
             self.config.machines[entry.name] = mc

@@ -81,9 +81,9 @@ async def test_login_page_returns_200(client):
 @pytest.mark.asyncio
 async def test_dashboard_with_config():
     """Test dashboard renders correctly with a real config object."""
-    from head.config_v2 import ConfigV2, PeerConfig
+    from head.config import Config, PeerConfig
 
-    config = ConfigV2()
+    config = Config()
     config.peers = {
         "test-peer": PeerConfig(id="test-peer", transport="ssh", ssh_host="10.0.0.1"),
     }
@@ -105,9 +105,9 @@ async def test_dashboard_with_config():
 @pytest.mark.asyncio
 async def test_api_status_with_config():
     """Test status API includes peer count from config."""
-    from head.config_v2 import ConfigV2, PeerConfig
+    from head.config import Config, PeerConfig
 
-    config = ConfigV2()
+    config = Config()
     config.peers = {
         "a": PeerConfig(id="a"),
         "b": PeerConfig(id="b"),

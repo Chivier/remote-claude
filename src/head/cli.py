@@ -314,7 +314,7 @@ def _cmd_status(args: argparse.Namespace) -> None:
 
     # ── Peers ──
     try:
-        from head.config_v2 import load_config_v2
+        from head.config import load_config_v2
 
         cfg_path = args.config
         if not cfg_path:
@@ -358,7 +358,7 @@ def _find_process(name: str) -> int | None:
 def _cmd_peers(args: argparse.Namespace) -> None:
     """List configured peers."""
     try:
-        from head.config_v2 import load_config_v2
+        from head.config import load_config_v2
 
         cfg_path = args.config or str(Path.home() / ".codecast" / "config.yaml")
         cfg = load_config_v2(cfg_path)
@@ -461,7 +461,7 @@ def _cmd_head(args: argparse.Namespace) -> None:
 
     # Load config and show summary
     try:
-        from head.config_v2 import load_config_v2
+        from head.config import load_config_v2
 
         cfg = load_config_v2(cfg_path)
     except Exception as exc:
@@ -520,7 +520,7 @@ def _webui_start(args: argparse.Namespace) -> None:
     # Load config (optional -- webui works without it)
     config = None
     try:
-        from head.config_v2 import load_config_v2
+        from head.config import load_config_v2
 
         cfg_path = args.config or str(Path.home() / ".codecast" / "config.yaml")
         config = load_config_v2(cfg_path)

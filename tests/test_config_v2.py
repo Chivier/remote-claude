@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from head.config_v2 import (
+from head.config import (
     BotConfig,
-    ConfigV2,
-    DaemonConfig,
-    DiscordBotConfig,
+    Config,
+    DaemonDeployConfig,
+    DiscordConfig,
     PeerConfig,
     SkillsConfig,
-    TelegramBotConfig,
+    TelegramConfig,
     WebUIConfig,
     load_config_v2,
     migrate_v1_to_v2,
@@ -353,7 +353,7 @@ class TestSaveConfigV2:
     """Save a v2 config to YAML."""
 
     def test_round_trip(self, tmp_path):
-        cfg = ConfigV2(
+        cfg = Config(
             peers={
                 "gpu-1": PeerConfig(
                     id="gpu-1",
@@ -383,7 +383,7 @@ class TestSaveConfigV2:
         assert loaded.default_mode == "auto"
 
     def test_save_creates_file(self, tmp_path):
-        cfg = ConfigV2()
+        cfg = Config()
         out = tmp_path / "new_config.yaml"
         assert not out.exists()
         save_config_v2(cfg, str(out))

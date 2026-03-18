@@ -44,9 +44,9 @@ def _check_daemon_running() -> tuple[bool, int | None]:
 
 
 def _load_config(config_path: str):
-    """Try to load ConfigV2; return None on failure."""
+    """Try to load config; return None on failure."""
     try:
-        from head.config_v2 import load_config_v2
+        from head.config import load_config_v2
 
         return load_config_v2(config_path)
     except Exception as exc:
@@ -448,12 +448,12 @@ class AddPeerScreen(Screen):
             self.app.pop_screen()
 
     def _save_peer(self, address: str) -> None:
-        from head.config_v2 import PeerConfig, ConfigV2, load_config_v2, save_config_v2
+        from head.config import PeerConfig, Config, load_config_v2, save_config_v2
 
         try:
             cfg = load_config_v2(self.config_path)
         except FileNotFoundError:
-            cfg = ConfigV2()
+            cfg = Config()
 
         if self._transport == "http":
             peer = PeerConfig(id=self._peer_name, transport="http", address=address)
@@ -511,10 +511,10 @@ class ConfigBotScreen(Screen):
         self.app.pop_screen()
 
     def _save_bot_token(self, token: str) -> None:
-        from head.config_v2 import (
-            ConfigV2,
-            DiscordBotConfig,
-            TelegramBotConfig,
+        from head.config import (
+            Config,
+            DiscordConfig,
+            TelegramConfig,
             load_config_v2,
             save_config_v2,
         )
@@ -522,12 +522,12 @@ class ConfigBotScreen(Screen):
         try:
             cfg = load_config_v2(self.config_path)
         except FileNotFoundError:
-            cfg = ConfigV2()
+            cfg = Config()
 
         if self.bot_type == "discord":
-            cfg.bot.discord = DiscordBotConfig(token=token)
+            cfg.bot.discord = DiscordConfig(token=token)
         else:
-            cfg.bot.telegram = TelegramBotConfig(token=token)
+            cfg.bot.telegram = TelegramConfig(token=token)
 
         Path(self.config_path).parent.mkdir(parents=True, exist_ok=True)
         save_config_v2(cfg, self.config_path)

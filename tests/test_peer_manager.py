@@ -2,7 +2,7 @@
 
 import pytest
 
-from head.config_v2 import PeerConfig
+from head.config import PeerConfig
 from head.peer_manager import PeerManager
 from head.transport.http import HTTPTransport
 from head.transport.ssh import SSHTransport

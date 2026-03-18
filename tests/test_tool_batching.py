@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from head.engine import BotEngine
 from head.platform.protocol import MessageHandle, InputHandler
-from head.config import Config, MachineConfig
+from head.config import Config, PeerConfig
 from head.session_router import SessionRouter
 from head.message_formatter import (
     compress_tool_messages,
@@ -136,8 +136,8 @@ def make_config():
 
     def _make(tool_batch_size: int = 15):
         config = Config()
-        config.machines = {
-            "gpu-1": MachineConfig(id="gpu-1", host="10.0.0.1", user="user"),
+        config.peers = {
+            "gpu-1": PeerConfig(id="gpu-1", ssh_host="10.0.0.1", ssh_user="user"),
         }
         config.default_mode = "auto"
         config.tool_batch_size = tool_batch_size

@@ -21,7 +21,7 @@ from typing import Optional
 
 import asyncssh
 
-from .config import Config, MachineConfig
+from .config import Config, PeerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -231,13 +231,13 @@ class SSHManager:
             logger.debug(f"Could not read local daemon.port: {e}")
         return default
 
-    def _get_machine(self, machine_id: str) -> MachineConfig:
+    def _get_machine(self, machine_id: str) -> PeerConfig:
         """Get machine config by ID, raising if not found."""
         if machine_id not in self.machines:
             raise ValueError(f"Unknown machine: {machine_id}. Available: {list(self.machines.keys())}")
         return self.machines[machine_id]
 
-    def _resolve_password(self, machine: MachineConfig) -> Optional[str]:
+    def _resolve_password(self, machine: PeerConfig) -> Optional[str]:
         """Resolve password from config. Supports 'file:/path' syntax."""
         if not machine.password:
             return None
@@ -251,7 +251,7 @@ class SSHManager:
                 return None
         return pw
 
-    async def _connect_ssh(self, machine: MachineConfig, timeout: float = 30.0) -> asyncssh.SSHClientConnection:
+    async def _connect_ssh(self, machine: PeerConfig, timeout: float = 30.0) -> asyncssh.SSHClientConnection:
         """Establish SSH connection to a machine with timeout."""
         connect_kwargs: dict = {
             "host": machine.host,
@@ -438,7 +438,7 @@ class SSHManager:
 
         raise RuntimeError(f"Daemon failed to start on {machine_id} after 30s")
 
-    async def _ensure_daemon_local(self, machine: MachineConfig) -> None:
+    async def _ensure_daemon_local(self, machine: PeerConfig) -> None:
         """
         Ensure the daemon is running locally (for localhost machines).
         Spawns it as a local subprocess instead of via SSH.
@@ -514,7 +514,7 @@ class SSHManager:
 
         raise RuntimeError(f"Local daemon failed to start after 30s")
 
-    async def _deploy_daemon_local(self, machine: MachineConfig, install_dir: Path) -> None:
+    async def _deploy_daemon_local(self, machine: PeerConfig, install_dir: Path) -> None:
         """Deploy daemon binary locally (for localhost machines)."""
         logger.info(f"Deploying daemon locally to {install_dir}")
 
@@ -640,7 +640,7 @@ class SSHManager:
         # Filter to machines we want to check
         targets = [(mid, m) for mid, m in self.machines.items() if not (mid in jump_hosts and not m.default_paths)]
 
-        async def check_machine(machine_id: str, machine: MachineConfig) -> dict:
+        async def check_machine(machine_id: str, machine: PeerConfig) -> dict:
             status = "unknown"
             daemon_status = "unknown"
 
