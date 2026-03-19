@@ -161,6 +161,7 @@ class Config:
     daemon: DaemonDeployConfig = field(default_factory=DaemonDeployConfig)
     file_pool: FilePoolConfig = field(default_factory=FilePoolConfig)
     file_forward: FileForwardConfig = field(default_factory=FileForwardConfig)
+    config_path: str | None = field(default=None, repr=False)
 
     @property
     def machines(self) -> dict[str, PeerConfig]:
@@ -258,7 +259,7 @@ def load_config(config_path: str = "config.yaml") -> Config:
     raw: dict[str, Any] = _process_value(raw_data)
 
     config = Config()
-    config._config_path = str(config_file.resolve())  # type: ignore[attr-defined]
+    config.config_path = str(config_file.resolve())
 
     # Parse peers (v2 format) or machines (v1 format)
     peers_raw: dict[str, Any] = raw.get("peers", {})
@@ -375,8 +376,8 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
 def _get_config_path(config: Config) -> Path:
     """Get the config file path. Falls back to 'config.yaml' in project root."""
-    if hasattr(config, "_config_path"):
-        return Path(config._config_path)  # type: ignore[attr-defined]
+    if config.config_path is not None:
+        return Path(config.config_path)
     return Path(__file__).parent.parent / "config.yaml"
 
 
@@ -710,6 +711,38 @@ def load_config_v2(config_path: str) -> Config:
             auto_deploy=daemon_raw.get("auto_deploy", True),
             log_file=daemon_raw.get("log_file", "~/.codecast/daemon.log"),
         )
+
+    # File pool
+    file_pool_raw: dict[str, Any] = raw.get("file_pool", {})
+    if file_pool_raw:
+        cfg.file_pool = FilePoolConfig(
+            max_size=file_pool_raw.get("max_size", 1073741824),
+            pool_dir=expand_env_vars(file_pool_raw.get("pool_dir", "~/.codecast/file-pool")),
+            remote_dir=file_pool_raw.get("remote_dir", "/tmp/codecast/files"),
+            allowed_types=file_pool_raw.get("allowed_types", list(DEFAULT_ALLOWED_FILE_TYPES)),
+        )
+
+    # File forward
+    file_forward_raw: dict[str, Any] = raw.get("file_forward", {})
+    if file_forward_raw:
+        rules = []
+        for rule_raw in file_forward_raw.get("rules", []):
+            rules.append(
+                FileForwardRule(
+                    pattern=rule_raw.get("pattern", "*"),
+                    max_size=rule_raw.get("max_size", 5 * 1024 * 1024),
+                    auto=rule_raw.get("auto", False),
+                )
+            )
+        cfg.file_forward = FileForwardConfig(
+            enabled=file_forward_raw.get("enabled", False),
+            rules=rules,
+            default_max_size=file_forward_raw.get("default_max_size", 5 * 1024 * 1024),
+            default_auto=file_forward_raw.get("default_auto", False),
+            download_dir=file_forward_raw.get("download_dir", "~/.codecast/downloads"),
+        )
+
+    cfg.config_path = str(path.resolve())
 
     return cfg
 

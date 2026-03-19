@@ -103,10 +103,18 @@ impl TokenStore {
         }
     }
 
-    /// Check if a token is valid.
+    /// Check if a token is valid (constant-time comparison to prevent timing attacks).
     pub async fn validate(&self, token: &str) -> bool {
+        use subtle::ConstantTimeEq;
         let guard = self.tokens.read().await;
-        guard.iter().any(|t| t == token)
+        let token_bytes = token.as_bytes();
+        guard.iter().any(|t| {
+            let t_bytes = t.as_bytes();
+            if t_bytes.len() != token_bytes.len() {
+                return false;
+            }
+            t_bytes.ct_eq(token_bytes).into()
+        })
     }
 
     /// Returns true if no tokens are loaded.

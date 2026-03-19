@@ -207,6 +207,54 @@ class TestPidHelpers:
         assert _read_pid_file(pf) is None
 
 
+class TestCmdPeers:
+    def test_peers_lists_configured_peers(self, tmp_path, capsys):
+        """_cmd_peers iterates dict items and prints peer_id + host."""
+        from head.cli import _cmd_peers, parse_args
+
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text(
+            "peers:\n"
+            "  gpu-box:\n"
+            "    transport: ssh\n"
+            "    ssh_host: 10.0.0.5\n"
+            "    ssh_user: alice\n"
+            "  local-dev:\n"
+            "    transport: local\n"
+        )
+        args = parse_args(["--config", str(cfg_file), "peers"])
+        _cmd_peers(args)
+
+        output = capsys.readouterr().out
+        assert "gpu-box" in output
+        assert "10.0.0.5" in output
+        assert "local-dev" in output
+        # local-dev has no ssh_host, should fall back to transport
+        assert "local" in output
+
+    def test_peers_empty(self, tmp_path, capsys):
+        """_cmd_peers prints message when no peers configured."""
+        from head.cli import _cmd_peers, parse_args
+
+        cfg_file = tmp_path / "config.yaml"
+        cfg_file.write_text("peers: {}\n")
+        args = parse_args(["--config", str(cfg_file), "peers"])
+        _cmd_peers(args)
+
+        output = capsys.readouterr().out
+        assert "No peers configured" in output
+
+    def test_peers_missing_config(self, capsys):
+        """_cmd_peers handles missing config file."""
+        from head.cli import _cmd_peers, parse_args
+
+        args = parse_args(["--config", "/tmp/nonexistent_codecast_cfg.yaml", "peers"])
+        _cmd_peers(args)
+
+        output = capsys.readouterr().out
+        assert "Config file not found" in output
+
+
 class TestStatusOutput:
     def test_status_prints_components(self, capsys):
         """_cmd_status prints all component sections."""

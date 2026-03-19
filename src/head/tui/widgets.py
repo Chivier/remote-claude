@@ -9,16 +9,16 @@ from pathlib import Path
 
 from textual.widgets import DataTable, Static
 
-from head.cli import (
-    _DAEMON_PID_FILE,
-    _HEAD_PID_FILE,
-    _WEBUI_PID_FILE,
-    _WEBUI_PORT_FILE,
-    _daemon_healthy,
-    _find_process,
-    _pid_alive,
-    _read_pid_file,
-    _read_port_file,
+from head.process_monitor import (
+    DAEMON_PID_FILE,
+    HEAD_PID_FILE,
+    WEBUI_PID_FILE,
+    WEBUI_PORT_FILE,
+    daemon_healthy,
+    find_process,
+    pid_alive,
+    read_pid_file,
+    read_port_file,
 )
 
 
@@ -65,8 +65,8 @@ class StatusPanel(Static):
         lines: list[str] = []
 
         # Head Node
-        head_pid = _read_pid_file(_HEAD_PID_FILE)
-        head_running = head_pid is not None and _pid_alive(head_pid)
+        head_pid = read_pid_file(HEAD_PID_FILE)
+        head_running = head_pid is not None and pid_alive(head_pid)
         if head_running:
             bots = self._get_bot_summary()
             bot_info = f" | bots: {', '.join(bots)}" if bots else ""
@@ -75,18 +75,18 @@ class StatusPanel(Static):
             lines.append("Head:   [dim]○[/dim] not running")
 
         # Daemon
-        port = _read_port_file()
-        daemon_pid = _read_pid_file(_DAEMON_PID_FILE) or _find_process("codecast-daemon")
-        if port is not None and _daemon_healthy(port):
+        port = read_port_file()
+        daemon_pid = read_pid_file(DAEMON_PID_FILE) or find_process("codecast-daemon")
+        if port is not None and daemon_healthy(port):
             pid_part = f" (pid={daemon_pid})" if daemon_pid else ""
             lines.append(f"Daemon: [green]●[/green] running on port {port}{pid_part}")
         else:
             lines.append("Daemon: [dim]○[/dim] not running")
 
         # WebUI
-        webui_pid = _read_pid_file(_WEBUI_PID_FILE)
-        webui_port = _read_pid_file(_WEBUI_PORT_FILE)
-        if webui_pid is not None and _pid_alive(webui_pid):
+        webui_pid = read_pid_file(WEBUI_PID_FILE)
+        webui_port = read_pid_file(WEBUI_PORT_FILE)
+        if webui_pid is not None and pid_alive(webui_pid):
             lines.append(f"WebUI:  [green]●[/green] running on http://127.0.0.1:{webui_port} (pid={webui_pid})")
         else:
             lines.append("WebUI:  [dim]○[/dim] not running")

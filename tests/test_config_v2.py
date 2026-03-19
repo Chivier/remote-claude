@@ -12,6 +12,8 @@ from head.config import (
     Config,
     DaemonDeployConfig,
     DiscordConfig,
+    FileForwardConfig,
+    FilePoolConfig,
     PeerConfig,
     SkillsConfig,
     TelegramConfig,
@@ -443,3 +445,75 @@ class TestDaemonAndSkillsConfig:
         cfg = load_config_v2(str(p))
         assert cfg.skills.shared_dir == "./my-skills"
         assert cfg.skills.sync_on_start is False
+
+
+class TestFilePoolAndForwardConfig:
+    """File pool, file forward, and config_path in load_config_v2."""
+
+    def test_load_config_v2_parses_file_pool(self, tmp_path):
+        p = _write_yaml(
+            tmp_path,
+            """\
+            peers:
+              local:
+                transport: local
+            file_pool:
+              max_size: 2147483648
+              pool_dir: /tmp/my-pool
+              remote_dir: /tmp/remote-files
+              allowed_types:
+                - "text/plain"
+                - "image/*"
+            """,
+        )
+        cfg = load_config_v2(str(p))
+        assert cfg.file_pool.max_size == 2147483648
+        assert cfg.file_pool.pool_dir == "/tmp/my-pool"
+        assert cfg.file_pool.remote_dir == "/tmp/remote-files"
+        assert cfg.file_pool.allowed_types == ["text/plain", "image/*"]
+
+    def test_load_config_v2_parses_file_forward(self, tmp_path):
+        p = _write_yaml(
+            tmp_path,
+            """\
+            peers:
+              local:
+                transport: local
+            file_forward:
+              enabled: true
+              default_max_size: 10485760
+              default_auto: true
+              download_dir: /tmp/downloads
+              rules:
+                - pattern: "*.py"
+                  max_size: 1048576
+                  auto: true
+                - pattern: "*.log"
+                  max_size: 2097152
+                  auto: false
+            """,
+        )
+        cfg = load_config_v2(str(p))
+        assert cfg.file_forward.enabled is True
+        assert cfg.file_forward.default_max_size == 10485760
+        assert cfg.file_forward.default_auto is True
+        assert cfg.file_forward.download_dir == "/tmp/downloads"
+        assert len(cfg.file_forward.rules) == 2
+        assert cfg.file_forward.rules[0].pattern == "*.py"
+        assert cfg.file_forward.rules[0].max_size == 1048576
+        assert cfg.file_forward.rules[0].auto is True
+        assert cfg.file_forward.rules[1].pattern == "*.log"
+        assert cfg.file_forward.rules[1].auto is False
+
+    def test_load_config_v2_sets_config_path(self, tmp_path):
+        p = _write_yaml(
+            tmp_path,
+            """\
+            peers:
+              local:
+                transport: local
+            """,
+        )
+        cfg = load_config_v2(str(p))
+        assert cfg.config_path is not None
+        assert cfg.config_path == str(p.resolve())

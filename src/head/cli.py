@@ -104,23 +104,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 # ---------------------------------------------------------------------------
-# Port file helpers
+# Port file helpers  (implementations live in process_monitor; re-exported
+# here with underscore aliases for backward compatibility)
 # ---------------------------------------------------------------------------
 
-_CODECAST_DIR = Path.home() / ".codecast"
-_PORT_FILE = _CODECAST_DIR / "daemon.port"
-_DAEMON_PID_FILE = _CODECAST_DIR / "daemon.pid"
-_HEAD_PID_FILE = _CODECAST_DIR / "head.pid"
-_WEBUI_PID_FILE = _CODECAST_DIR / "webui.pid"
-_WEBUI_PORT_FILE = _CODECAST_DIR / "webui.port"
-
-
-def _read_port_file() -> int | None:
-    """Return the daemon port from the port file, or None."""
-    try:
-        return int(_PORT_FILE.read_text().strip())
-    except (FileNotFoundError, ValueError):
-        return None
+from head.process_monitor import (  # noqa: E402
+    CODECAST_DIR as _CODECAST_DIR,
+    DAEMON_PID_FILE as _DAEMON_PID_FILE,
+    HEAD_PID_FILE as _HEAD_PID_FILE,
+    PORT_FILE as _PORT_FILE,
+    WEBUI_PID_FILE as _WEBUI_PID_FILE,
+    WEBUI_PORT_FILE as _WEBUI_PORT_FILE,
+    daemon_healthy as _daemon_healthy,
+    find_process as _find_process,
+    pid_alive as _pid_alive,
+    read_pid_file as _read_pid_file,
+    read_port_file as _read_port_file,
+)
 
 
 def _port_available(port: int, host: str = "127.0.0.1") -> bool:
@@ -133,42 +133,6 @@ def _port_available(port: int, host: str = "127.0.0.1") -> bool:
             return True
         except OSError:
             return False
-
-
-def _pid_alive(pid: int) -> bool:
-    """Return True if a process with *pid* exists."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except (ProcessLookupError, PermissionError):
-        return False
-
-
-def _read_pid_file(path: Path) -> int | None:
-    """Read a PID from a file, returning None if missing or invalid."""
-    try:
-        return int(path.read_text().strip())
-    except (FileNotFoundError, ValueError):
-        return None
-
-
-def _daemon_healthy(port: int) -> bool:
-    """Quick health check against localhost:<port> via JSON-RPC."""
-    import json
-    import urllib.request
-
-    try:
-        payload = json.dumps({"jsonrpc": "2.0", "method": "health.check", "params": {}, "id": "1"}).encode()
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/rpc",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=2) as resp:
-            return resp.status == 200
-    except Exception:
-        return False
 
 
 # ---------------------------------------------------------------------------
@@ -340,25 +304,6 @@ def _cmd_status(args: argparse.Namespace) -> None:
         print(f"Peers:      unable to load config ({exc})")
 
 
-def _find_process(name: str) -> int | None:
-    """Find a process by name using pgrep, returning its PID or None."""
-    try:
-        result = subprocess.run(
-            ["pgrep", "-f", name],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
-            # Return first PID (skip our own)
-            for line in result.stdout.strip().splitlines():
-                pid = int(line.strip())
-                if pid != os.getpid():
-                    return pid
-    except (FileNotFoundError, ValueError):
-        pass
-    return None
-
-
 def _cmd_peers(args: argparse.Namespace) -> None:
     """List configured peers."""
     try:
@@ -366,14 +311,13 @@ def _cmd_peers(args: argparse.Namespace) -> None:
 
         cfg_path = args.config or str(Path.home() / ".codecast" / "config.yaml")
         cfg = load_config_v2(cfg_path)
-        peers = getattr(cfg, "peers", []) or []
+        peers = cfg.peers
         if not peers:
             print("No peers configured.")
             return
-        for p in peers:
-            name = getattr(p, "name", None) or getattr(p, "host", "unknown")
-            host = getattr(p, "host", "?")
-            print(f"  {name} ({host})")
+        for peer_id, peer_cfg in peers.items():
+            host = getattr(peer_cfg, "ssh_host", None) or peer_cfg.transport
+            print(f"  {peer_id} ({host})")
     except FileNotFoundError:
         print("Config file not found. Use --config to specify path.")
     except Exception as exc:

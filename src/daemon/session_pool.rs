@@ -11,6 +11,7 @@ use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::message_queue::MessageQueue;
+use crate::server::expand_tilde;
 use crate::types::{
     convert_claude_message, PermissionMode, QueueStats, SessionInfo, SessionStatus, StreamEvent,
 };
@@ -269,14 +270,26 @@ impl SessionPool {
 
     /// Destroy all sessions (cleanup on shutdown)
     pub async fn destroy_all(&self) {
-        let mut sessions = self.sessions.lock().await;
-        for (id, session) in sessions.iter_mut() {
-            if let Some(ref mut child) = session.process {
-                send_sigterm_then_sigkill(child, 5000).await;
+        let mut children: Vec<(String, Child)> = Vec::new();
+        {
+            let mut sessions = self.sessions.lock().await;
+            for (id, session) in sessions.iter_mut() {
+                if let Some(child) = session.process.take() {
+                    children.push((id.clone(), child));
+                }
             }
-            info!("[SessionPool] Destroyed session {} (shutdown)", id);
+            sessions.clear();
         }
-        sessions.clear();
+
+        let futures: Vec<_> = children
+            .into_iter()
+            .map(|(id, mut child)| async move {
+                send_sigterm_then_sigkill(&mut child, 5000).await;
+                info!("[SessionPool] Destroyed session {} (shutdown)", id);
+            })
+            .collect();
+
+        futures::future::join_all(futures).await;
     }
 }
 
@@ -553,12 +566,15 @@ async fn process_message_loop(
             let mut sessions_guard = sessions.lock().await;
             if let Some(session) = sessions_guard.get_mut(&session_id) {
                 session.process = None;
-                session.processing = false;
-                session.status = SessionStatus::Idle;
 
                 if session.queue.has_user_pending() {
-                    session.queue.dequeue_user()
+                    let msg = session.queue.dequeue_user();
+                    // Keep processing = true, stay Busy
+                    session.last_activity_at = Utc::now();
+                    msg
                 } else {
+                    session.processing = false;
+                    session.status = SessionStatus::Idle;
                     None
                 }
             } else {
@@ -584,16 +600,6 @@ async fn process_message_loop(
                 break;
             }
         };
-
-        // Mark as processing again
-        {
-            let mut sessions_guard = sessions.lock().await;
-            if let Some(session) = sessions_guard.get_mut(&session_id) {
-                session.processing = true;
-                session.status = SessionStatus::Busy;
-                session.last_activity_at = Utc::now();
-            }
-        }
 
         // For background queued messages, create a buffering channel
         let sessions_for_buffer = sessions.clone();
@@ -625,14 +631,4 @@ async fn process_message_loop(
         drop(buf_tx);
         let _ = buffer_task.await;
     }
-}
-
-/// Expand ~ to home directory
-fn expand_tilde(path: &str) -> String {
-    if path.starts_with("~/") || path == "~" {
-        if let Some(home) = dirs::home_dir() {
-            return path.replacen('~', &home.to_string_lossy(), 1);
-        }
-    }
-    path.to_string()
 }

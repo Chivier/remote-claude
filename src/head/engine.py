@@ -1130,7 +1130,8 @@ class BotEngine:
         await self.send_message(channel_id, "Pulling latest code...")
 
         try:
-            result = subprocess.run(
+            result = await asyncio.to_thread(
+                subprocess.run,
                 ["git", "pull", "--ff-only"],
                 cwd=project_dir,
                 capture_output=True,

@@ -395,7 +395,7 @@ async fn handle_health_check(state: &AppState, req: &RpcRequest) -> Result<RpcRe
                 "heapUsed": heap_used_mb,
                 "heapTotal": heap_total_mb,
             },
-            "nodeVersion": "rust",
+            "version": env!("CARGO_PKG_VERSION"),
             "pid": std::process::id(),
         }),
         req.id.clone(),
@@ -457,7 +457,7 @@ impl IntoResponse for RpcJsonResponse {
 }
 
 /// Expand ~ to home directory
-fn expand_tilde(path: &str) -> String {
+pub fn expand_tilde(path: &str) -> String {
     if path.starts_with("~/") || path == "~" {
         if let Some(home) = dirs::home_dir() {
             return path.replacen('~', &home.to_string_lossy(), 1);
