@@ -31,11 +31,14 @@ class StatusPanel(Static):
     }
     """
 
+    REFRESH_INTERVAL = 2.0  # seconds between auto-refresh
+
     def __init__(self, **kwargs) -> None:
         super().__init__("", **kwargs)
 
     def on_mount(self) -> None:
         self.update(self._build_status())
+        self.set_interval(self.REFRESH_INTERVAL, self.refresh_status)
 
     def _build_status(self) -> str:
         lines: list[str] = []
