@@ -121,6 +121,7 @@ class DashboardScreen(Screen):
         ("w", "start_webui", "WebUI"),
         ("a", "add_peer", "Add Peer"),
         ("s", "sessions", "Sessions"),
+        ("question_mark", "show_help", "Help"),
         ("q", "quit_app", "Quit"),
     ]
 
@@ -175,8 +176,58 @@ class DashboardScreen(Screen):
         except Exception:
             pass
 
+    def action_show_help(self) -> None:
+        self.app.push_screen(HelpScreen())
+
     def action_quit_app(self) -> None:
         self.app.exit()
+
+
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
+
+
+class HelpScreen(Screen):
+    """Help screen showing available keyboard shortcuts and commands."""
+
+    BINDINGS = [("escape", "go_back", "Back")]
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        help_text = (
+            "[bold]Codecast TUI — Help[/bold]\n"
+            "\n"
+            "[bold]Dashboard shortcuts:[/bold]\n"
+            "  [cyan]d[/cyan]  Start / stop the local daemon\n"
+            "  [cyan]h[/cyan]  Start / stop the head node (Discord/Telegram/Lark bots)\n"
+            "  [cyan]w[/cyan]  Start / stop the web UI\n"
+            "  [cyan]a[/cyan]  Add a new peer (remote machine)\n"
+            "  [cyan]s[/cyan]  View active sessions\n"
+            "  [cyan]?[/cyan]  Show this help screen\n"
+            "  [cyan]q[/cyan]  Quit\n"
+            "\n"
+            "[bold]Navigation:[/bold]\n"
+            "  [cyan]Esc[/cyan]      Go back / close current screen\n"
+            "  [cyan]Enter[/cyan]    Select highlighted option\n"
+            "  [cyan]Up/Down[/cyan]  Navigate options\n"
+            "\n"
+            "[bold]CLI equivalents:[/bold]\n"
+            "  codecast start       Start the daemon\n"
+            "  codecast stop        Stop the daemon\n"
+            "  codecast head start  Start the head node\n"
+            "  codecast status      Show component status\n"
+            "  codecast peers       List configured peers\n"
+            "  codecast sessions    List active sessions\n"
+        )
+        yield Vertical(
+            Static(help_text, id="help_text"),
+            id="head_container",
+        )
+        yield Footer()
+
+    def action_go_back(self) -> None:
+        self.app.pop_screen()
 
 
 # ---------------------------------------------------------------------------
@@ -544,11 +595,19 @@ class ConfigBotScreen(Screen):
 class SessionsScreen(Screen):
     """Screen for viewing sessions from the SessionRouter database."""
 
-    BINDINGS = [("escape", "go_back", "Back")]
+    BINDINGS = [
+        ("escape", "go_back", "Back"),
+        ("t", "toggle_sort", "Toggle sort"),
+        ("r", "remove_session", "Remove"),
+        ("delete", "remove_session", "Remove"),
+    ]
 
     def __init__(self, config_path: str) -> None:
         super().__init__()
         self.config_path = config_path
+        self._sort_descending = True  # newest first by default
+        self._sessions: list = []
+        self._row_session_map: dict[int, object] = {}  # row index -> Session
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -556,39 +615,76 @@ class SessionsScreen(Screen):
             Static("[bold]Sessions[/bold]\n", id="sessions_title"),
             DataTable(id="sessions_table"),
             Static("", id="sessions_info"),
-            OptionList(Option("Back", id="back"), id="sessions_menu"),
             id="sessions_container",
         )
         yield Footer()
 
     def on_mount(self) -> None:
         table = self.query_one("#sessions_table", DataTable)
-        table.add_columns("Name", "Machine", "Path", "Mode", "Status")
+        table.add_columns("Name", "Path", "Mode", "Status", "Created")
         table.cursor_type = "row"
+        self._sessions = self._load_sessions()
         self._populate_sessions(table)
 
     def _populate_sessions(self, table: DataTable) -> None:
-        sessions = self._load_sessions()
+        table.clear()
+        self._row_session_map.clear()
         info = self.query_one("#sessions_info", Static)
+
+        sessions = self._sessions
         if not sessions:
             info.update("[dim]No sessions found.[/dim]")
             return
-        for s in sessions:
+
+        # Sort by created_at
+        sessions_sorted = sorted(
+            sessions,
+            key=lambda s: s.created_at or "",
+            reverse=self._sort_descending,
+        )
+
+        # Group by machine
+        from collections import OrderedDict
+
+        grouped: OrderedDict[str, list] = OrderedDict()
+        for s in sessions_sorted:
+            grouped.setdefault(s.machine_id, []).append(s)
+
+        row_idx = 0
+        for machine_id, machine_sessions in grouped.items():
+            # Machine header row
             table.add_row(
-                s.name or s.daemon_session_id[:8],
-                s.machine_id,
-                s.path if len(s.path) <= 30 else "..." + s.path[-27:],
-                s.mode,
-                s.status,
+                f"[bold cyan]▸ {machine_id}[/bold cyan]",
+                "",
+                "",
+                "",
+                "",
+                key=f"header_{machine_id}",
             )
-        info.update(f"[dim]{len(sessions)} session(s)[/dim]")
+            row_idx += 1
+
+            for s in machine_sessions:
+                created = s.created_at[:16].replace("T", " ") if s.created_at else ""
+                path_display = s.path if len(s.path) <= 30 else "..." + s.path[-27:]
+                table.add_row(
+                    f"  {s.name or s.daemon_session_id[:8]}",
+                    path_display,
+                    s.mode,
+                    s.status,
+                    created,
+                    key=f"session_{s.channel_id}",
+                )
+                self._row_session_map[row_idx] = s
+                row_idx += 1
+
+        sort_label = "newest first" if self._sort_descending else "oldest first"
+        info.update(f"[dim]{len(sessions)} session(s) | Sort: {sort_label} (t) | Remove (r/del)[/dim]")
 
     def _load_sessions(self):
         """Load sessions from the SessionRouter SQLite database."""
         try:
             from head.session_router import SessionRouter
 
-            # Try common DB locations
             candidates = [
                 Path.home() / ".codecast" / "sessions.db",
                 Path(__file__).parent.parent / "sessions.db",
@@ -601,9 +697,46 @@ class SessionsScreen(Screen):
             logger.warning("Failed to load sessions: %s", exc)
         return []
 
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        if event.option.id == "back":
-            self.app.pop_screen()
+    def _get_router(self):
+        """Get a SessionRouter instance, or None."""
+        try:
+            from head.session_router import SessionRouter
+
+            candidates = [
+                Path.home() / ".codecast" / "sessions.db",
+                Path(__file__).parent.parent / "sessions.db",
+            ]
+            for db_path in candidates:
+                if db_path.exists():
+                    return SessionRouter(str(db_path))
+        except Exception:
+            pass
+        return None
+
+    def action_toggle_sort(self) -> None:
+        self._sort_descending = not self._sort_descending
+        table = self.query_one("#sessions_table", DataTable)
+        self._populate_sessions(table)
+
+    def action_remove_session(self) -> None:
+        table = self.query_one("#sessions_table", DataTable)
+        if table.row_count == 0:
+            return
+        cursor_row = table.cursor_row
+        session = self._row_session_map.get(cursor_row)
+        if session is None:
+            # Cursor is on a machine header row
+            self.notify("Select a session row to remove.", severity="warning")
+            return
+        router = self._get_router()
+        if router:
+            router.destroy(session.channel_id)
+            self._sessions = [s for s in self._sessions if s.channel_id != session.channel_id]
+            self._populate_sessions(table)
+            name = session.name or session.daemon_session_id[:8]
+            self.notify(f"Removed session: {name}")
+        else:
+            self.notify("Cannot find session database.", severity="error")
 
     def action_go_back(self) -> None:
         self.app.pop_screen()

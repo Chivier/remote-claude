@@ -357,8 +357,8 @@ async def test_sessions_screen_shows_table(tmp_path):
         # Should have the expected columns
         col_labels = [col.label.plain for col in table.columns.values()]
         assert "Name" in col_labels
-        assert "Machine" in col_labels
         assert "Status" in col_labels
+        assert "Created" in col_labels
 
 
 @pytest.mark.asyncio
@@ -458,7 +458,8 @@ async def test_sessions_screen_with_sessions(tmp_path):
         await pilot.pause()
 
         table = app.screen.query_one("#sessions_table")
-        assert table.row_count == 1
+        # 1 machine header + 1 session row = 2 rows
+        assert table.row_count == 2
         info = app.screen.query_one("#sessions_info")
         text = _get_static_text(info)
         assert "1 session(s)" in text
