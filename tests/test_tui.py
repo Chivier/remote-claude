@@ -656,6 +656,7 @@ async def test_start_daemon_screen_shows_stopped(tmp_path):
         with (
             patch("head.tui.screens._check_daemon_running", return_value=(False, None)),
             patch("head.tui.screens._check_claude_cli", return_value=True),
+            patch("head.peer_manager.resolve_daemon_binary", return_value="/usr/bin/fake-daemon"),
         ):
             app.push_screen(StartDaemonScreen(str(config_path)))
             await pilot.pause()
@@ -717,6 +718,7 @@ async def test_start_daemon_screen_start_option(tmp_path):
         with (
             patch("head.tui.screens._check_daemon_running", return_value=(False, None)),
             patch("head.tui.screens._check_claude_cli", return_value=True),
+            patch("head.peer_manager.resolve_daemon_binary", return_value="/usr/bin/fake-daemon"),
         ):
             app.push_screen(StartDaemonScreen(str(config_path)))
             await pilot.pause()
