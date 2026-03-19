@@ -104,38 +104,38 @@ Config files are searched in order:
 ## Requirements
 
 - **Python 3.11+** — head node
-- **Rust toolchain** — the daemon binary is compiled from source during `pip install codecast`
 - **SSH access** — to remote machine(s) with Claude CLI installed
 - **Bot token** — Discord and/or Telegram
+- **Rust toolchain** (optional) — only needed to build the daemon binary from source
 
-### Installing Rust
+### Building the Daemon (optional)
 
-The daemon is written in Rust and compiled during installation. If you don't have the Rust toolchain installed, the build will fail with `error: can't find Rust compiler`.
-
-**Linux / macOS:**
+The head node (Python) installs without Rust. The daemon binary is a separate Rust project that runs on remote machines. If you need to build it from source:
 
 ```bash
+# Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"
+
+# Build the daemon
+git clone https://github.com/Chivier/codecast.git
+cd codecast
+cargo build --release
+# Binary at: target/release/codecast-daemon
 ```
 
-**Verify installation:**
-
-```bash
-rustc --version   # e.g. rustc 1.82.0
-cargo --version   # e.g. cargo 1.82.0
-```
-
-After installing Rust, retry:
-
-```bash
-pip install codecast
-```
-
-> **Note:** On some systems you may also need a C compiler and development headers. Install them with:
+> **Note:** On some systems you may also need a C compiler and development headers:
 > - **Debian/Ubuntu:** `sudo apt install build-essential pkg-config libssl-dev`
 > - **Fedora/RHEL:** `sudo dnf install gcc pkg-config openssl-devel`
 > - **macOS:** `xcode-select --install`
+
+### One-line Install (from source)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Chivier/codecast/main/scripts/install.sh | bash
+```
+
+This clones the repo, creates a virtualenv, installs Python dependencies, and optionally builds the daemon if Rust is available.
 
 ## License
 

@@ -33,7 +33,6 @@ info "Checking prerequisites..."
 
 check_command git "Install git: https://git-scm.com/"
 check_command python3 "Install Python 3.11+: https://www.python.org/"
-check_command cargo "Install Rust: https://rustup.rs/"
 
 # Check Python version >= 3.11
 PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
@@ -43,6 +42,14 @@ if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR"
     error "Python 3.11+ required, found $PYTHON_VERSION"
 fi
 ok "Python $PYTHON_VERSION"
+
+# Optional: check for Rust (needed only if building the daemon from source)
+if command -v cargo &>/dev/null; then
+    ok "Rust toolchain found (for building daemon)"
+else
+    warn "Rust not found. The head node will work, but to build the daemon binary you need Rust."
+    warn "Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+fi
 
 # --- Clone or update repo ---
 
@@ -68,10 +75,27 @@ python3 -m venv "$VENV_DIR"
 source "$VENV_DIR/bin/activate"
 
 info "Installing codecast and dependencies..."
+pip install --upgrade pip --quiet
 pip install -e "$INSTALL_DIR" --quiet
 ok "Installed"
 
-# Note: Rust daemon is built automatically by setuptools-rust during pip install.
+# --- Build daemon if Rust is available ---
+
+if command -v cargo &>/dev/null && [ -f "$INSTALL_DIR/Cargo.toml" ]; then
+    info "Building Rust daemon..."
+    (cd "$INSTALL_DIR" && cargo build --release --quiet)
+    # Copy daemon binary to head/bin for deployment
+    DAEMON_BIN="$INSTALL_DIR/target/release/codecast-daemon"
+    if [ -f "$DAEMON_BIN" ]; then
+        ARCH=$(uname -m)
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        cp "$DAEMON_BIN" "$INSTALL_DIR/src/head/bin/codecast-daemon-${OS}-${ARCH}"
+        ok "Daemon binary built and staged for deployment"
+    fi
+else
+    warn "Skipping daemon build (Rust not available or no Cargo.toml)."
+    warn "You can build it later: cd $INSTALL_DIR && cargo build --release"
+fi
 
 # --- Setup config ---
 
