@@ -2,14 +2,14 @@
 
 **Date:** 2026-03-19
 **Status:** Draft
-**Scope:** Support multiple CLI backends (Claude, Codex, Gemini, OpenCode, Kiro) via a trait-based adapter architecture. All five CLIs share the same Head Node infrastructure; only the Daemon-side adapter differs per CLI.
+**Scope:** Support multiple CLI backends (Claude, Codex, Gemini, OpenCode) via a trait-based adapter architecture. All four CLIs share the same Head Node infrastructure; only the Daemon-side adapter differs per CLI.
 
 ## Requirements
 
 - **Per-session CLI selection**: Same machine can run sessions from different CLIs simultaneously
-- **Authentication**: Rely on remote machine's pre-configured environment (API keys, `codex login`, `gemini auth`, `opencode auth login`, `kiro-cli login`)
+- **Authentication**: Rely on remote machine's pre-configured environment (API keys, `codex login`, `gemini auth`, `opencode auth login`)
 - **Command UX**: `/start <machine> <path> --cli <type>` or `--<type>` shorthand; defaults to claude
-- **MVP scope**: Core session lifecycle only (create, send, stream, resume, destroy, permission modes). No CLI-specific advanced features in v1
+- **MVP scope**: Core session lifecycle only (create, send, stream, resume, destroy, permission modes). No CLI-specific advanced features
 - **Parallelizable implementation**: Shared infrastructure implemented once; per-CLI adapters are independent and can be developed in parallel
 
 ## Supported CLIs
@@ -20,7 +20,6 @@
 | Codex | `codex` | `npm i -g @openai/codex` | `AGENTS.md` |
 | Gemini | `gemini` | `npm i -g @google/gemini-cli` | `GEMINI.md` |
 | OpenCode | `opencode` | `go install` or binary | `AGENTS.md` |
-| Kiro | `kiro-cli` | `curl -fsSL https://cli.kiro.dev/install \| bash` | `AGENTS.md` (+ `.kiro/steering/`) |
 
 ## Architecture: Daemon-Side CliAdapter Trait
 
@@ -33,7 +32,7 @@
 /// start of each `run_cli_process()` call via `create_adapter()`. This ensures
 /// per-run state (e.g., cumulative text trackers) is always clean.
 pub trait CliAdapter: Send + Sync {
-    /// CLI name identifier ("claude", "codex", "gemini", "opencode", "kiro")
+    /// CLI name identifier ("claude", "codex", "gemini", "opencode")
     fn name(&self) -> &str;
 
     /// Build command for first execution
@@ -75,18 +74,18 @@ pub trait CliAdapter: Send + Sync {
 ```
 
 **Changes from the original Codex-only design:**
-- `parse_output_line` now returns `Vec<StreamEvent>` instead of `Option<StreamEvent>` — Claude's `assistant` messages produce multiple events (tool_use + text) from a single line, Gemini's `tool_result` events need no StreamEvent mapping. A Vec handles both cleanly.
-- Added `skills_dir()` method — Claude syncs `.claude/skills/`, others may not have a skills directory in v1.
+- `parse_output_line` now returns `Vec<StreamEvent>` instead of `Option<StreamEvent>` — Claude's `assistant` messages produce multiple events (tool_use + text) from a single line. A Vec handles this cleanly.
+- Added `skills_dir()` method — Claude syncs `.claude/skills/`, others don't have a skills directory.
 
 ### Why 5+ Methods
 
 | Method | Reason |
 |--------|--------|
-| `build_command` vs `build_resume_command` | Resume mechanics differ: Claude uses `--resume` flag, Codex uses `exec resume` subcommand, Gemini uses `--resume`, OpenCode uses `--session`, Kiro uses `--resume` |
+| `build_command` vs `build_resume_command` | Resume mechanics differ: Claude uses `--resume` flag, Codex uses `exec resume` subcommand, Gemini uses `--resume`, OpenCode uses `--session` |
 | `parse_output_line` | Each CLI has a different JSON event schema |
 | `extract_session_id` | Session ID lives in different event types per CLI |
-| `instructions_file` | Claude → `CLAUDE.md`, Gemini → `GEMINI.md`, Codex/OpenCode/Kiro → `AGENTS.md` |
-| `skills_dir` | Only Claude has `.claude/skills/` in v1 |
+| `instructions_file` | Claude → `CLAUDE.md`, Gemini → `GEMINI.md`, Codex/OpenCode → `AGENTS.md` |
+| `skills_dir` | Only Claude has `.claude/skills/` |
 | `stderr_log_level` | Some CLIs send progress to stderr (normal), others send only errors |
 
 ### Adapter Factory
@@ -97,7 +96,6 @@ pub fn create_adapter(cli_type: &str) -> Box<dyn CliAdapter> {
         "codex" => Box::new(CodexAdapter::new()),
         "gemini" => Box::new(GeminiAdapter::new()),
         "opencode" => Box::new(OpenCodeAdapter::new()),
-        "kiro" => Box::new(KiroAdapter::new()),
         _ => Box::new(ClaudeAdapter),  // default
     }
 }
@@ -120,14 +118,13 @@ src/daemon/
     codex.rs        # CodexAdapter
     gemini.rs       # GeminiAdapter
     opencode.rs     # OpenCodeAdapter
-    kiro.rs         # KiroAdapter
 ```
 
 ---
 
 ## Shared Infrastructure (Implement Once)
 
-The following components are **CLI-agnostic** and only need to be implemented once. They form the foundation that all five adapters build upon.
+The following components are **CLI-agnostic** and only need to be implemented once. They form the foundation that all four adapters build upon.
 
 ### Daemon-Side Shared
 
@@ -145,7 +142,7 @@ The following components are **CLI-agnostic** and only need to be implemented on
 |-----------|--------|
 | `daemon_client.py` | `create_session()` gains `cli_type` parameter |
 | `engine.py` | `cmd_start()` parses `--cli <type>` from args; `cmd_clear`/`cmd_new` carry `cli_type` from existing session |
-| `bot_discord.py` | Slash command adds `cli` choice parameter (claude/codex/gemini/opencode/kiro) |
+| `bot_discord.py` | Slash command adds `cli` choice parameter (claude/codex/gemini/opencode) |
 | `session_router.py` | `cli_type` column in `sessions` + `session_log` tables; `Session` dataclass updated |
 | `message_formatter.py` | `/status` and `/ls session` show CLI type indicator |
 
@@ -171,7 +168,7 @@ All other RPC methods remain unchanged. The `cli_type` is stored in `SessionStat
 ```rust
 pub struct SessionState {
     pub id: String,
-    pub cli_type: String,        // NEW: "claude" | "codex" | "gemini" | "opencode" | "kiro"
+    pub cli_type: String,        // NEW: "claude" | "codex" | "gemini" | "opencode"
     pub sdk_session_id: Option<String>,
     pub mode: PermissionMode,
     pub project_path: String,
@@ -197,7 +194,7 @@ async def create_session(self, path, mode=None, cli_type="claude"):
 async def cmd_start(self, channel_id: str, args: list[str], ...):
     cli_type = "claude"  # default
     # Check shorthand flags first
-    for shorthand in ("--codex", "--gemini", "--opencode", "--kiro"):
+    for shorthand in ("--codex", "--gemini", "--opencode"):
         if shorthand in args:
             args.remove(shorthand)
             cli_type = shorthand.lstrip("-")
@@ -224,7 +221,7 @@ The `Session` dataclass gains `cli_type: str = "claude"`.
 
 #### bot_discord.py
 
-Discord slash command `/start` adds an optional `cli` choice parameter with values: `claude`, `codex`, `gemini`, `opencode`, `kiro`.
+Discord slash command `/start` adds an optional `cli` choice parameter with values: `claude`, `codex`, `gemini`, `opencode`.
 
 ```
 /start gpu-server ~/myproject              → cli_type="claude" (default)
@@ -248,10 +245,9 @@ pub fn sync_to_project(&self, path: &Path, cli_type: &str) -> Result<()> {
 | CLI | Instructions File | Skills Dir |
 |-----|-------------------|------------|
 | Claude | `CLAUDE.md` | `.claude/skills/` |
-| Codex | `AGENTS.md` | None (v1) |
-| Gemini | `GEMINI.md` | None (v1) |
-| OpenCode | `AGENTS.md` | None (v1) |
-| Kiro | `AGENTS.md` | None (v1) |
+| Codex | `AGENTS.md` | None |
+| Gemini | `GEMINI.md` | None |
+| OpenCode | `AGENTS.md` | None |
 
 ---
 
@@ -451,7 +447,7 @@ Gemini uses flat event types with `type` field. Every event includes a `timestam
 
 #### Incremental Text Handling
 
-Gemini `message` events with `delta: true` are **pure deltas** (not cumulative), so **no cumulative tracking is needed** — unlike Codex. Each delta message's `content` field is the new text only. This is the simplest streaming model of all five CLIs.
+Gemini `message` events with `delta: true` are **pure deltas** (not cumulative), so **no cumulative tracking is needed** — unlike Codex. Each delta message's `content` field is the new text only. This is the simplest streaming model of all four CLIs.
 
 #### Session ID
 
@@ -541,10 +537,6 @@ OpenCode uses Claude-compatible tool names (Read, Edit, Write, Bash, Glob, Grep,
 - `Task` → `subagent`
 - Other names → pass through lowercase
 
-#### ACP Mode (v2 Upgrade Path)
-
-OpenCode also supports ACP (`opencode acp`), a JSON-RPC 2.0 protocol over stdio similar to Kiro's ACP. This could be used in v2 for long-lived subprocess mode instead of per-message spawn. Additionally, OpenCode has a server mode (`opencode serve`) that exposes an HTTP API — another potential v2 integration approach via `--attach`.
-
 #### Implementation Notes
 
 - **Stateful** adapter — needs `Cell<Option<String>>` for session_id capture
@@ -555,119 +547,6 @@ OpenCode also supports ACP (`opencode acp`), a JSON-RPC 2.0 protocol over stdio 
 - OpenCode has its own TUI; we only use the headless `run` subcommand
 - **Known issue**: `--continue`/`--session` may have reliability issues across multiple `opencode run` invocations ([issue #11680](https://github.com/anomalyco/opencode/issues/11680)) — test thoroughly
 - **Known issue**: `--command` flag breaks JSON output ([issue #2923](https://github.com/anomalyco/opencode/issues/2923)) — avoid `--command` in adapter
-
----
-
-### Adapter 5: KiroAdapter
-
-**Status:** New implementation.
-
-#### Command Construction
-
-```bash
-# First message (simple non-interactive mode)
-kiro-cli chat --no-interactive --trust-all-tools "message"
-
-# Resume session
-kiro-cli chat --no-interactive --trust-all-tools --resume "message"
-```
-
-Key differences from Claude CLI:
-- Uses `chat` subcommand with `--no-interactive` flag
-- Trust model via `--trust-all-tools` (not `--dangerously-skip-permissions`)
-- Resume via `--resume` flag (resumes most recent session for current directory)
-- Output to STDOUT is **plain text** in `--no-interactive` mode — no structured JSON streaming
-- For structured output, Kiro offers ACP (Agent Communication Protocol) — JSON-RPC 2.0 over stdio
-
-#### ACP Mode (Recommended for v2)
-
-Kiro's `--no-interactive` mode outputs plain text, which limits streaming capability. The **ACP protocol** provides full structured JSON-RPC 2.0 output and is the recommended future integration path:
-
-```bash
-kiro-cli acp
-```
-
-This spawns Kiro as a long-running subprocess with stdin/stdout JSON-RPC 2.0:
-
-**ACP Methods:**
-
-| Method | Purpose |
-|--------|---------|
-| `initialize` | Handshake: exchange capabilities and metadata |
-| `session/new` | Create a fresh session |
-| `session/load` | Load existing session by ID |
-| `session/prompt` | Send user input (streaming notifications follow) |
-| `session/cancel` | Cancel current operation |
-| `session/set_mode` | Change agent mode |
-| `session/set_model` | Change model |
-
-**Streaming notifications** (emitted during `session/prompt`):
-
-| Notification Type | StreamEvent Mapping |
-|---|---|
-| `AgentMessageChunk` | `Partial { content }` — streamed text deltas |
-| `ToolCall` (status=running) | `ToolUse { tool: name }` — tool invocation |
-| `ToolCallUpdate` | `ToolUse { tool: name, message: progress }` — tool progress |
-| `TurnEnd` | `Result { session_id }` — agent turn completed |
-
-**Sample ACP exchange:**
-```json
-→ {"jsonrpc":"2.0","method":"initialize","params":{"clientInfo":{"name":"codecast"},"capabilities":{}},"id":1}
-← {"jsonrpc":"2.0","result":{"serverInfo":{"name":"kiro"},"capabilities":{"loadSession":true,"promptCapabilities":{"image":true}}},"id":1}
-
-→ {"jsonrpc":"2.0","method":"session/new","params":{},"id":2}
-← {"jsonrpc":"2.0","result":{"sessionId":"..."},"id":2}
-
-→ {"jsonrpc":"2.0","method":"session/prompt","params":{"sessionId":"...","parts":[{"type":"text","text":"Fix the bug"}]},"id":3}
-← {"jsonrpc":"2.0","method":"session/notification","params":{"type":"AgentMessageChunk","content":"I'll look at..."}}
-← {"jsonrpc":"2.0","method":"session/notification","params":{"type":"ToolCall","name":"shell","status":"running"}}
-← {"jsonrpc":"2.0","method":"session/notification","params":{"type":"ToolCall","name":"shell","status":"completed","output":"..."}}
-← {"jsonrpc":"2.0","method":"session/notification","params":{"type":"TurnEnd"}}
-← {"jsonrpc":"2.0","result":{"ok":true},"id":3}
-```
-
-**Design decision**: KiroAdapter will use `--no-interactive` mode in v1 for consistency with other adapters (per-message spawn model). ACP mode is a v2 enhancement that would enable long-lived subprocess management similar to Claude CLI's `--input-format stream-json`.
-
-**Note**: OpenCode also has an ACP mode (`opencode acp`) with a similar JSON-RPC 2.0 protocol. Both Kiro and OpenCode ACP modes are candidates for v2 long-lived subprocess adapters.
-
-#### Permission Mode Mapping
-
-| Codecast Mode | Kiro CLI Flags |
-|---|---|
-| `auto` | `--trust-all-tools` |
-| `code` | `--trust-tools @builtin/write,@builtin/shell` |
-| `plan` | (no `--trust-*` flags — default supervised) |
-| `ask` | (default, no extra flags) |
-
-Note: Kiro's trust model is tool-granular (`--trust-tools <list>`) rather than mode-based. `code` mode maps to trusting write and shell tools specifically.
-
-#### Output Event Mapping (--no-interactive mode)
-
-In `--no-interactive` mode, Kiro outputs plain text to STDOUT. The adapter treats the entire output as a single text response:
-
-| Kiro Output | StreamEvent | Notes |
-|---|---|---|
-| (process start) | `System { subtype: "init" }` | Synthetic event from adapter |
-| (stdout text) | `Text { content }` | Entire output as one text block |
-| (process exit 0) | `Result { session_id: None }` | Success |
-| (process exit != 0) | `Error { message: stderr }` | Failure |
-
-**Limitation**: No streaming partial events in `--no-interactive` mode. The user sees the response only after Kiro finishes processing. This is acceptable for v1 but should be upgraded to ACP mode in v2 for real-time streaming.
-
-#### Session ID
-
-Kiro's `--no-interactive` mode does not output a session ID in its text output. The adapter will:
-1. Attempt to parse any session metadata from stderr
-2. Fall back to `None` — session resume relies on Kiro's directory-based session persistence (`--resume` resumes the most recent session for the CWD)
-
-#### Implementation Notes
-
-- **Stateless** adapter in v1 (no streaming, no ID tracking)
-- `stderr_log_level`: `Info` (Kiro may output progress to stderr)
-- `instructions_file`: `"AGENTS.md"`
-- `skills_dir`: `None`
-- Kiro CLI requires authentication via `kiro-cli login` on the remote machine
-- v2 upgrade path: ACP mode would make KiroAdapter the most capable adapter (native JSON-RPC, session management, streaming notifications)
 
 ---
 
@@ -685,14 +564,14 @@ Kiro's `--no-interactive` mode does not output a session ID in its text output. 
 
 ### Phase 2: Per-CLI Adapters (Parallel, independent)
 
-After Phase 1 completes, these four tasks can run **in parallel** as they have zero dependencies on each other:
+After Phase 1 completes, these three tasks can run **in parallel** as they have zero dependencies on each other:
 
 ```
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ CodexAdapter │  │GeminiAdapter │  │OpenCodeAdapt │  │ KiroAdapter  │
-│   codex.rs   │  │  gemini.rs   │  │ opencode.rs  │  │   kiro.rs    │
-│  + tests     │  │  + tests     │  │  + tests     │  │  + tests     │
-└──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ CodexAdapter │  │GeminiAdapter │  │OpenCodeAdapt │
+│   codex.rs   │  │  gemini.rs   │  │ opencode.rs  │
+│  + tests     │  │  + tests     │  │  + tests     │
+└──────────────┘  └──────────────┘  └──────────────┘
 ```
 
 Each adapter implementation includes:
@@ -728,7 +607,6 @@ Each adapter implementation includes:
 | `src/daemon/cli_adapter/codex.rs` | **New** — CodexAdapter |
 | `src/daemon/cli_adapter/gemini.rs` | **New** — GeminiAdapter |
 | `src/daemon/cli_adapter/opencode.rs` | **New** — OpenCodeAdapter |
-| `src/daemon/cli_adapter/kiro.rs` | **New** — KiroAdapter |
 
 ---
 
@@ -740,7 +618,7 @@ Each adapter implementation includes:
 - `create_adapter()` factory routing: each string maps to correct adapter
 - `session_router` cli_type column migration and CRUD tests
 - `daemon_client.create_session()` parameter passing tests
-- `/start --cli <type>` argument parsing tests for all 5 CLI types
+- `/start --cli <type>` argument parsing tests for all 4 CLI types
 - `/status` and `/ls session` CLI type display tests
 
 ### Per-Adapter Tests (Phase 2, parallel)
@@ -755,27 +633,14 @@ Each adapter needs:
 
 ---
 
-## Out of Scope (v1)
+## Out of Scope
 
 - **CLI-specific advanced features:**
   - Codex: `--image`, `--add-dir`, `--ephemeral`, `--output-schema`, `codex fork`
   - Gemini: `--extensions`, `--all-files`, checkpointing, `@<path>` file injection, sandbox profiles, policy engine
-  - OpenCode: `--fork`, `--share`, `--command`, `opencode serve` server mode, subagent invocation (`@general`)
-  - Kiro: spec-driven development, hooks, `.kiro/steering/` auto/manual inclusion modes, agent-specific trust configuration
+  - OpenCode: `--fork`, `--share`, `--command`, `opencode serve` server mode, ACP protocol, subagent invocation (`@general`)
 - **Config-level API key management** — relies on remote machine's pre-configured environment
-- **Skills directory sync for non-Claude CLIs** — only Claude has `.claude/skills/` in v1
+- **Skills directory sync for non-Claude CLIs** — only Claude has `.claude/skills/`
 - **Multi-model selection within a CLI session**
-- **Long-lived subprocess / ACP mode** — all CLIs use per-message spawn in v1; ACP (Kiro, OpenCode) and Claude's `--input-format stream-json` are v2 candidates
+- **Long-lived subprocess mode** — Claude's `--input-format stream-json`, OpenCode's ACP (`opencode acp`)
 - **Conversation branching** — Gemini's `/chat save`+`/chat resume`, OpenCode's `--fork`
-
-## v2 Upgrade Path: ACP / Long-Lived Subprocess
-
-Three CLIs support long-lived subprocess protocols that bypass per-message spawn overhead:
-
-| CLI | Protocol | Command | Benefits |
-|-----|----------|---------|----------|
-| Claude | stream-json stdin/stdout | `claude --input-format stream-json --output-format stream-json` | Bidirectional JSON, fastest multi-turn |
-| Kiro | ACP (JSON-RPC 2.0 over stdio) | `kiro-cli acp` | Full session management, streaming notifications, model switching |
-| OpenCode | ACP (JSON-RPC 2.0 over stdio) | `opencode acp` | Similar to Kiro ACP; also has HTTP server mode (`opencode serve`) |
-
-These would require a new `LongLivedCliAdapter` trait (or extending `CliAdapter`) with methods for initialization, session management, and notification parsing — a fundamentally different communication pattern from the current per-message spawn model.

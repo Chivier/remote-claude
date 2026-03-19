@@ -104,9 +104,38 @@ Config files are searched in order:
 ## Requirements
 
 - **Python 3.11+** — head node
-- **Rust/cargo** — daemon binary is compiled during `pip install codecast` ([rustup.rs](https://rustup.rs/))
+- **Rust toolchain** — the daemon binary is compiled from source during `pip install codecast`
 - **SSH access** — to remote machine(s) with Claude CLI installed
 - **Bot token** — Discord and/or Telegram
+
+### Installing Rust
+
+The daemon is written in Rust and compiled during installation. If you don't have the Rust toolchain installed, the build will fail with `error: can't find Rust compiler`.
+
+**Linux / macOS:**
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+**Verify installation:**
+
+```bash
+rustc --version   # e.g. rustc 1.82.0
+cargo --version   # e.g. cargo 1.82.0
+```
+
+After installing Rust, retry:
+
+```bash
+pip install codecast
+```
+
+> **Note:** On some systems you may also need a C compiler and development headers. Install them with:
+> - **Debian/Ubuntu:** `sudo apt install build-essential pkg-config libssl-dev`
+> - **Fedora/RHEL:** `sudo dnf install gcc pkg-config openssl-devel`
+> - **macOS:** `xcode-select --install`
 
 ## License
 
