@@ -157,24 +157,18 @@ def _cmd_start(args: argparse.Namespace) -> None:
         return
 
     # Resolve daemon binary
-    daemon_bin: str | None = None
+    daemon_bin = None
     try:
         from head.peer_manager import resolve_daemon_binary
 
         daemon_bin = resolve_daemon_binary()
     except (ImportError, Exception):
-        # Fallback: look for bundled binary
-        candidates = [
-            Path(__file__).parent / "bin" / "codecast-daemon",
-            Path.home() / ".codecast" / "daemon" / "codecast-daemon",
-        ]
-        for c in candidates:
-            if c.exists() and os.access(c, os.X_OK):
-                daemon_bin = str(c)
-                break
+        pass
 
     if daemon_bin is None:
         print("Error: could not find codecast-daemon binary.", file=sys.stderr)
+        print("Build it with: cargo build --release", file=sys.stderr)
+        print("Then copy to: ~/.codecast/daemon/codecast-daemon", file=sys.stderr)
         sys.exit(1)
 
     config_path = args.config

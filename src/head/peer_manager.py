@@ -17,23 +17,42 @@ logger = logging.getLogger(__name__)
 # ─── Daemon binary resolution ───
 
 
-def resolve_daemon_binary() -> Path:
-    """Resolve daemon binary path (extracted from SSHManager for reuse)."""
-    project_root = Path(__file__).parent.parent
-    dev_binary = project_root / "target" / "release" / "codecast-daemon"
-    if dev_binary.exists():
-        return dev_binary
+def resolve_daemon_binary() -> Path | None:
+    """Resolve daemon binary path.
 
+    Resolution order:
+    1. target/release/codecast-daemon (dev: local cargo build — only if inside a repo)
+    2. On PATH (codecast-daemon installed or symlinked)
+    3. ~/.codecast/daemon/codecast-daemon (user-installed binary)
+    4. head/bin/codecast-daemon-{platform} (CI-bundled in wheel)
+    Returns None if the daemon binary cannot be found.
+    """
+    # 1. Dev build (only when running from a source checkout with Cargo.toml)
+    project_root = Path(__file__).parent.parent
+    cargo_toml = project_root / "Cargo.toml"
+    if cargo_toml.exists():
+        dev_binary = project_root / "target" / "release" / "codecast-daemon"
+        if dev_binary.exists():
+            return dev_binary
+
+    # 2. On PATH
     which = shutil.which("codecast-daemon")
     if which:
         return Path(which)
 
-    # Check bundled binaries
+    # 3. User-installed binary in ~/.codecast/daemon/
+    user_binary = Path.home() / ".codecast" / "daemon" / "codecast-daemon"
+    if user_binary.exists():
+        return user_binary
+
+    # 4. Bundled binary matching current platform
     system = _platform.system().lower()
     machine = _platform.machine().lower()
     platform_map = {
         ("linux", "x86_64"): "codecast-daemon-linux-x64",
+        ("linux", "amd64"): "codecast-daemon-linux-x64",
         ("darwin", "arm64"): "codecast-daemon-macos-arm64",
+        ("darwin", "aarch64"): "codecast-daemon-macos-arm64",
     }
     binary_name = platform_map.get((system, machine))
     if binary_name:
@@ -41,7 +60,7 @@ def resolve_daemon_binary() -> Path:
         if bundled.exists():
             return bundled
 
-    return dev_binary
+    return None
 
 
 # ─── PeerManager ───

@@ -79,55 +79,14 @@ class SSHManager:
         self._rust_binary = self._resolve_daemon_binary()
 
     @staticmethod
-    def _resolve_daemon_binary() -> Path:
+    def _resolve_daemon_binary() -> Path | None:
         """Resolve the daemon binary path.
 
-        Resolution order:
-        1. target/release/codecast-daemon (dev: local cargo build)
-        2. On PATH (installed via pip install codecast with setuptools-rust)
-        3. head/bin/codecast-daemon-{platform} (CI-bundled wheel)
-        4. Falls back to dev path (cargo build will be triggered on deploy)
+        Delegates to the shared resolve_daemon_binary() in peer_manager.
         """
-        project_root = Path(__file__).parent.parent
+        from head.peer_manager import resolve_daemon_binary
 
-        # 1. Dev build
-        dev_binary = project_root / "target" / "release" / "codecast-daemon"
-        if dev_binary.exists():
-            return dev_binary
-
-        # 2. On PATH (installed via pip install codecast)
-        which = shutil.which("codecast-daemon")
-        if which:
-            return Path(which)
-
-        # 3. Bundled binary matching current platform
-        bundled = SSHManager._get_bundled_binary_path()
-        if bundled and bundled.exists():
-            return bundled
-
-        # 4. Fallback to dev path (will trigger cargo build on deploy)
-        return dev_binary
-
-    @staticmethod
-    def _get_bundled_binary_path() -> Optional[Path]:
-        """Get path to bundled daemon binary for current platform."""
-        system = platform.system().lower()
-        machine = platform.machine().lower()
-
-        platform_map = {
-            ("linux", "x86_64"): "codecast-daemon-linux-x64",
-            ("linux", "amd64"): "codecast-daemon-linux-x64",
-            ("darwin", "arm64"): "codecast-daemon-macos-arm64",
-            ("darwin", "aarch64"): "codecast-daemon-macos-arm64",
-            ("windows", "x86_64"): "codecast-daemon-windows-x64.exe",
-            ("windows", "amd64"): "codecast-daemon-windows-x64.exe",
-        }
-
-        binary_name = platform_map.get((system, machine))
-        if not binary_name:
-            return None
-
-        return Path(__file__).parent / "bin" / binary_name
+        return resolve_daemon_binary()
 
     def _alloc_port(self) -> int:
         """Allocate an available local port for SSH tunnel."""
