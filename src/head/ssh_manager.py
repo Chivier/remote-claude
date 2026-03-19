@@ -832,11 +832,7 @@ class SSHManager:
             if machine.localhost:
                 expanded = Path(project_path).expanduser()
                 if expanded.is_dir():
-                    return sorted(
-                        d.name
-                        for d in expanded.iterdir()
-                        if d.is_dir() and not d.name.startswith(".")
-                    )
+                    return sorted(d.name for d in expanded.iterdir() if d.is_dir() and not d.name.startswith("."))
                 return machine.default_paths
 
             tunnel = self.tunnels.get(machine_id)
@@ -844,9 +840,7 @@ class SSHManager:
                 return machine.default_paths
 
             result = await asyncio.wait_for(
-                tunnel.conn.run(
-                    f"ls -1 {project_path}/ 2>/dev/null"
-                ),
+                tunnel.conn.run(f"ls -1 {project_path}/ 2>/dev/null"),
                 timeout=3.0,
             )
             stdout = (result.stdout or "").strip()

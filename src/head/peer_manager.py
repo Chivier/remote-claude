@@ -51,8 +51,15 @@ def resolve_daemon_binary() -> Path | None:
     platform_map = {
         ("linux", "x86_64"): "codecast-daemon-linux-x64",
         ("linux", "amd64"): "codecast-daemon-linux-x64",
+        ("linux", "aarch64"): "codecast-daemon-linux-arm64",
+        ("linux", "arm64"): "codecast-daemon-linux-arm64",
         ("darwin", "arm64"): "codecast-daemon-macos-arm64",
         ("darwin", "aarch64"): "codecast-daemon-macos-arm64",
+        ("darwin", "x86_64"): "codecast-daemon-macos-x64",
+        ("windows", "x86_64"): "codecast-daemon-windows-x64.exe",
+        ("windows", "amd64"): "codecast-daemon-windows-x64.exe",
+        ("windows", "aarch64"): "codecast-daemon-windows-arm64.exe",
+        ("windows", "arm64"): "codecast-daemon-windows-arm64.exe",
     }
     binary_name = platform_map.get((system, machine))
     if binary_name:

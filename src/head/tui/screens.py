@@ -74,14 +74,9 @@ def _load_config(config_path: str):
 # Setup Wizard
 # ---------------------------------------------------------------------------
 
-class SetupWizardScreen(Screen):
-    """First-run setup wizard with step-by-step guidance.
 
-    Steps are shown with status indicators:
-    - Green checkmark for completed steps
-    - Numbered circle for pending required steps
-    - "optional" label for non-required steps
-    """
+class SetupWizardScreen(Screen):
+    """First-run setup wizard — clean checkbox UI with one-click actions."""
 
     BINDINGS = [
         ("q", "quit_app", "Quit"),
@@ -101,19 +96,19 @@ class SetupWizardScreen(Screen):
             "bot": False,
             "machine": False,
         }
-        # Daemon running?
         daemon_running, _ = _check_daemon_running()
         steps["daemon"] = daemon_running
 
-        # Any bot configured?
         try:
             from head.config import load_config
 
             cfg = load_config(self.config_path)
             if cfg.bot:
-                if (cfg.bot.discord and getattr(cfg.bot.discord, "token", None)) or (
-                    cfg.bot.telegram and getattr(cfg.bot.telegram, "token", None)
-                ) or (getattr(cfg.bot, "lark", None) and getattr(cfg.bot.lark, "app_id", None)):
+                if (
+                    (cfg.bot.discord and getattr(cfg.bot.discord, "token", None))
+                    or (cfg.bot.telegram and getattr(cfg.bot.telegram, "token", None))
+                    or (getattr(cfg.bot, "lark", None) and getattr(cfg.bot.lark, "app_id", None))
+                ):
                     steps["bot"] = True
             if cfg.peers:
                 steps["machine"] = True
@@ -122,81 +117,88 @@ class SetupWizardScreen(Screen):
 
         return steps
 
-    def _build_step_label(self, num: int, done: bool, text: str, desc: str, optional: bool = False) -> str:
-        """Build a step label with status indicator."""
+    def _build_step_label(self, done: bool, text: str, desc: str, optional: bool = False) -> str:
+        """Build a checkbox-style step label."""
         if done:
-            return f"[bold green]✓[/bold green] [dim strikethrough]{text}[/dim strikethrough]  [green]done[/green]"
-        tag = "[dim](optional)[/dim]" if optional else f"[bold cyan]Step {num}[/bold cyan]"
-        return f"{tag}  {text}  [dim]— {desc}[/dim]"
+            return f"  [bold green][x][/bold green] [dim strikethrough]{text}[/dim strikethrough]  [green]done[/green]"
+        tag = "[dim](optional)[/dim] " if optional else ""
+        return f"  [ ] {tag}{text}  [dim]— {desc}[/dim]"
+
+    def _build_options(self, steps: dict[str, bool]) -> list[Option]:
+        """Build the option list from current step state."""
+        options: list[Option] = []
+
+        options.append(
+            Option(
+                self._build_step_label(steps["daemon"], "Install & start daemon", "manages CLI agent processes"),
+                id="start_daemon",
+            )
+        )
+        options.append(
+            Option(
+                self._build_step_label(steps["bot"], "Configure a chat bot", "Discord, Telegram, or Lark"),
+                id="config_bot",
+            )
+        )
+        options.append(
+            Option(
+                self._build_step_label(steps["machine"], "Add a remote machine", "connect via SSH", optional=True),
+                id="add_machine",
+            )
+        )
+
+        required_done = sum([steps["daemon"], steps["bot"]])
+        if required_done >= 2:
+            options.append(Option("[bold green]  -> Open Dashboard[/bold green]", id="dashboard"))
+        else:
+            options.append(Option("  Skip setup and exit", id="skip"))
+
+        return options
+
+    def _first_incomplete_index(self, steps: dict[str, bool]) -> int:
+        """Return the index of the first incomplete required step."""
+        if not steps["daemon"]:
+            return 0
+        if not steps["bot"]:
+            return 1
+        return 0
 
     def compose(self) -> ComposeResult:
         yield Header()
 
         steps = self._check_steps()
-
-        # Count required steps completed
         required_done = sum([steps["daemon"], steps["bot"]])
-        required_total = 2
 
-        # Welcome text
-        welcome = (
-            f"Welcome to Codecast! {self.version}\n\n"
-            "Codecast lets you control AI coding agents (Claude CLI, Codex CLI) on local\n"
-            "or remote machines through Discord, Telegram, or the web UI.\n\n"
-            "[bold]How it works:[/bold]\n"
-            "  [cyan]Daemon[/cyan]    Runs on each machine — spawns and manages CLI agent processes\n"
-            "  [cyan]Head[/cyan]      Runs here — connects your chat bots to the daemons\n"
-            "  [cyan]Machines[/cyan]  Remote servers you connect to via SSH (optional)\n\n"
-        )
-
-        if required_done == required_total:
-            welcome += "[bold green]All required steps complete![/bold green] Select an option or press [cyan]q[/cyan] to exit.\n"
+        if required_done >= 2:
+            progress = "[bold green]All required steps complete![/bold green] Press [cyan]q[/cyan] to exit.\n"
         else:
-            welcome += f"[bold]Setup progress: {required_done}/{required_total} required steps complete[/bold]\n"
+            progress = f"[bold]Setup: {required_done}/2 required steps[/bold]\n"
 
-        # Build options dynamically with completion status
-        step_num = 1
-        options: list[Option] = []
-
-        # Step 1: Daemon (required)
-        label = self._build_step_label(step_num if not steps["daemon"] else 0, steps["daemon"],
-                                       "Start local daemon", "manages Claude/Codex CLI agent processes")
-        options.append(Option(label, id="start_daemon"))
-        if not steps["daemon"]:
-            step_num += 1
-
-        # Step 2: Bot (required — at least one)
-        label = self._build_step_label(step_num if not steps["bot"] else 0, steps["bot"],
-                                       "Configure a chat bot", "Discord or Telegram — how you'll talk to agents")
-        options.append(Option(label, id="config_bot"))
-        if not steps["bot"]:
-            step_num += 1
-
-        # Optional: Add remote machine
-        label = self._build_step_label(0, steps["machine"],
-                                       "Add a remote machine", "connect to a server via SSH", optional=True)
-        options.append(Option(label, id="add_machine"))
-
-        # Finish / Dashboard
-        if required_done == required_total:
-            options.append(Option("[bold green]→ Open Dashboard[/bold green]", id="dashboard"))
-        else:
-            options.append(Option("Skip setup and exit", id="skip"))
+        options = self._build_options(steps)
 
         yield Vertical(
             Static(LOGO, id="logo"),
-            Static(welcome, id="welcome"),
+            Static(progress, id="welcome"),
             OptionList(*options, id="wizard_menu"),
             id="wizard_container",
         )
         yield Footer()
+
+    def on_mount(self) -> None:
+        """Set cursor to the first incomplete step."""
+        steps = self._check_steps()
+        idx = self._first_incomplete_index(steps)
+        try:
+            menu = self.query_one("#wizard_menu", OptionList)
+            menu.highlighted = idx
+        except Exception:
+            pass
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         option_id = event.option.id
         if option_id == "skip":
             self.app.exit()
         elif option_id == "dashboard":
-            # Switch to dashboard screen
             self.app.pop_screen()
             self.app.push_screen(DashboardScreen(self.config_path, self.version))
         elif option_id == "start_daemon":
@@ -210,54 +212,21 @@ class SetupWizardScreen(Screen):
         """Refresh the wizard when returning from a sub-screen."""
         steps = self._check_steps()
         required_done = sum([steps["daemon"], steps["bot"]])
-        required_total = 2
 
-        # Update welcome text
         try:
             welcome = self.query_one("#welcome", Static)
-            if required_done == required_total:
-                progress = "[bold green]All required steps complete![/bold green] Select an option or press [cyan]q[/cyan] to exit.\n"
+            if required_done >= 2:
+                welcome.update("[bold green]All required steps complete![/bold green] Press [cyan]q[/cyan] to exit.\n")
             else:
-                progress = f"[bold]Setup progress: {required_done}/{required_total} required steps complete[/bold]\n"
-            welcome.update(
-                f"Welcome to Codecast! {self.version}\n\n"
-                "Codecast lets you control AI coding agents (Claude CLI, Codex CLI) on local\n"
-                "or remote machines through Discord, Telegram, or the web UI.\n\n"
-                "[bold]How it works:[/bold]\n"
-                "  [cyan]Daemon[/cyan]    Runs on each machine — spawns and manages CLI agent processes\n"
-                "  [cyan]Head[/cyan]      Runs here — connects your chat bots to the daemons\n"
-                "  [cyan]Machines[/cyan]  Remote servers you connect to via SSH (optional)\n\n"
-                + progress
-            )
+                welcome.update(f"[bold]Setup: {required_done}/2 required steps[/bold]\n")
         except Exception:
             pass
 
-        # Update option list
         try:
             menu = self.query_one("#wizard_menu", OptionList)
             menu.clear_options()
-
-            step_num = 1
-            label = self._build_step_label(step_num if not steps["daemon"] else 0, steps["daemon"],
-                                           "Start local daemon", "manages Claude/Codex CLI agent processes")
-            menu.add_option(Option(label, id="start_daemon"))
-            if not steps["daemon"]:
-                step_num += 1
-
-            label = self._build_step_label(step_num if not steps["bot"] else 0, steps["bot"],
-                                           "Configure a chat bot", "Discord or Telegram — how you'll talk to agents")
-            menu.add_option(Option(label, id="config_bot"))
-            if not steps["bot"]:
-                step_num += 1
-
-            label = self._build_step_label(0, steps["machine"],
-                                           "Add a remote machine", "connect to a server via SSH", optional=True)
-            menu.add_option(Option(label, id="add_machine"))
-
-            if required_done == required_total:
-                menu.add_option(Option("[bold green]→ Open Dashboard[/bold green]", id="dashboard"))
-            else:
-                menu.add_option(Option("Skip setup and exit", id="skip"))
+            for opt in self._build_options(steps):
+                menu.add_option(opt)
         except Exception:
             pass
 
@@ -809,7 +778,7 @@ class StartHeadScreen(Screen):
 
 
 class StartDaemonScreen(Screen):
-    """Screen for starting or stopping the local daemon."""
+    """Screen for starting, stopping, or installing the local daemon."""
 
     BINDINGS = [
         ("escape", "go_back", "Back"),
@@ -820,22 +789,34 @@ class StartDaemonScreen(Screen):
     def __init__(self, config_path: str) -> None:
         super().__init__()
         self.config_path = config_path
+        self._installing = False
 
     def compose(self) -> ComposeResult:
+        yield Header()
+        yield Vertical(
+            Static("", id="daemon_status"),
+            OptionList(id="daemon_menu"),
+            Static("", id="daemon_log"),
+            id="daemon_container",
+        )
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self._refresh_ui()
+
+    def _refresh_ui(self) -> None:
+        """Rebuild status text and menu options based on current state."""
         from head.cli import _DAEMON_PID_FILE, _pid_alive, _read_pid_file
         from head.peer_manager import resolve_daemon_binary
 
-        yield Header()
         daemon_running, daemon_port = _check_daemon_running()
         daemon_pid = _read_pid_file(_DAEMON_PID_FILE)
         claude_available = _check_claude_cli()
         daemon_binary = resolve_daemon_binary()
 
-        # Explanation header
         explanation = (
             "[bold cyan]Daemon[/bold cyan] — the agent process manager\n"
-            "[dim]The daemon runs on a machine and manages Claude/Codex CLI processes.\n"
-            "It receives commands from the head node and streams responses back.[/dim]\n"
+            "[dim]Manages Claude/Codex CLI processes on this machine.[/dim]\n"
         )
 
         if daemon_running:
@@ -844,23 +825,23 @@ class StartDaemonScreen(Screen):
                 f"Status: [bold green]● running[/bold green] on port [bold white]{daemon_port}[/bold white]{pid_part}"
             )
         elif daemon_binary is None:
-            status = (
-                "Status: [bold yellow]⚠ daemon binary not found[/bold yellow]\n\n"
-                "[bold]To install the daemon, build from source:[/bold]\n"
-                "  [cyan]curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh[/cyan]\n"
-                "  [cyan]git clone https://github.com/Chivier/codecast.git && cd codecast[/cyan]\n"
-                "  [cyan]cargo build --release[/cyan]\n"
-                "  [cyan]mkdir -p ~/.codecast/daemon[/cyan]\n"
-                "  [cyan]cp target/release/codecast-daemon ~/.codecast/daemon/[/cyan]\n\n"
-                "[dim]The daemon is a Rust binary that manages CLI agent subprocesses.\n"
-                "It only needs to be installed on machines where you want to run agents.[/dim]"
-            )
+            from head.daemon_installer import get_expected_asset_name
+
+            asset = get_expected_asset_name()
+            if asset:
+                status = (
+                    f"Status: [bold yellow]⚠ daemon binary not found[/bold yellow]\n[dim]Will download: {asset}[/dim]"
+                )
+            else:
+                status = (
+                    "Status: [bold yellow]⚠ daemon binary not found[/bold yellow]\n"
+                    "[dim]No pre-built binary for this platform — will build from source[/dim]"
+                )
         elif not claude_available:
             status = (
                 "Status: [bold red]○ stopped[/bold red]\n\n"
                 "[bold yellow]⚠ Claude CLI not found on PATH[/bold yellow]\n"
-                "[dim]The daemon needs Claude CLI (or Codex CLI) installed to run agent sessions.\n"
-                "Install from: https://docs.anthropic.com/en/docs/claude-cli[/dim]"
+                "[dim]Install from: https://docs.anthropic.com/en/docs/claude-cli[/dim]"
             )
         else:
             status = (
@@ -868,22 +849,22 @@ class StartDaemonScreen(Screen):
                 f"[dim]Binary: {daemon_binary}[/dim]"
             )
 
-        msg = explanation + status
+        status_widget = self.query_one("#daemon_status", Static)
+        status_widget.update(explanation + status)
 
-        options: list[Option] = []
-        if daemon_running:
-            options.append(Option("Stop daemon", id="stop"))
-            options.append(Option("Restart daemon", id="restart"))
-        elif daemon_binary is not None and claude_available:
-            options.append(Option("Start daemon", id="start"))
-        options.append(Option("Back", id="back"))
+        menu = self.query_one("#daemon_menu", OptionList)
+        menu.clear_options()
 
-        yield Vertical(
-            Static(msg, id="daemon_status"),
-            OptionList(*options, id="daemon_menu"),
-            id="daemon_container",
-        )
-        yield Footer()
+        if self._installing:
+            menu.add_option(Option("[dim]Installing...[/dim]", id="noop"))
+        elif daemon_running:
+            menu.add_option(Option("Stop daemon", id="stop"))
+            menu.add_option(Option("Restart daemon", id="restart"))
+        elif daemon_binary is None:
+            menu.add_option(Option("[bold]Install daemon[/bold]", id="install"))
+        elif claude_available:
+            menu.add_option(Option("Start daemon", id="start"))
+        menu.add_option(Option("Back", id="back"))
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         option_id = event.option.id
@@ -896,6 +877,49 @@ class StartDaemonScreen(Screen):
         elif option_id == "restart":
             self._stop_daemon_only()
             self._start_daemon()
+        elif option_id == "install":
+            self._install_daemon()
+
+    def _install_daemon(self) -> None:
+        """Run daemon installation in a background thread."""
+        self._installing = True
+        self._refresh_ui()
+
+        log_widget = self.query_one("#daemon_log", Static)
+        log_lines: list[str] = []
+
+        def on_progress(msg: str) -> None:
+            log_lines.append(msg)
+            # Keep last 12 lines
+            display = log_lines[-12:]
+            self.call_from_thread(log_widget.update, "\n".join(f"[dim]{l}[/dim]" for l in display))
+
+        def do_install() -> bool:
+            from head.daemon_installer import install_daemon
+
+            return install_daemon(on_progress=on_progress)
+
+        def on_done(success: bool) -> None:
+            self._installing = False
+            if success:
+                self.notify("Daemon installed successfully!")
+                log_widget.update("[green]Installation complete.[/green]")
+            else:
+                self.notify("Daemon installation failed.", severity="error")
+                log_widget.update("[red]Installation failed. Check log above.[/red]")
+            self._refresh_ui()
+
+        import threading
+
+        def _run() -> None:
+            try:
+                result = do_install()
+            except Exception as exc:
+                on_progress(f"Error: {exc}")
+                result = False
+            self.call_from_thread(on_done, result)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _start_daemon(self) -> None:
         """Start daemon as subprocess (non-blocking)."""
@@ -939,6 +963,10 @@ class StartDaemonScreen(Screen):
         self._stop_daemon_only()
         self.notify("Daemon stopped.")
         self.app.pop_screen()
+
+    def on_screen_resume(self) -> None:
+        """Refresh when returning from a sub-screen."""
+        self._refresh_ui()
 
     def action_cursor_down(self) -> None:
         try:

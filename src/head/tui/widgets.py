@@ -112,7 +112,9 @@ class StatusPanel(Static):
         if cli_parts:
             lines.append(f"[bold]CLIs[/bold]    [dim](AI agents)[/dim]       {' | '.join(cli_parts)}")
         else:
-            lines.append("[bold]CLIs[/bold]    [dim](AI agents)[/dim]       [bold red]✗ none found[/bold red] [dim](install claude or codex)[/dim]")
+            lines.append(
+                "[bold]CLIs[/bold]    [dim](AI agents)[/dim]       [bold red]✗ none found[/bold red] [dim](install claude or codex)[/dim]"
+            )
 
         return "\n".join(lines)
 

@@ -51,17 +51,36 @@ jobs:
   # Standalone daemon binaries for GitHub Release downloads
   build-daemon:
     strategy:
+      fail-fast: false
       matrix:
         include:
+          # ── Linux ──
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             binary: codecast-daemon-linux-x64
-          - target: x86_64-pc-windows-msvc
-            runner: windows-latest
-            binary: codecast-daemon-windows-x64.exe
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            binary: codecast-daemon-linux-arm64
+            cross: true
+          # ── macOS ──
           - target: aarch64-apple-darwin
             runner: macos-latest
             binary: codecast-daemon-macos-arm64
+            cross: false
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            binary: codecast-daemon-macos-x64
+            cross: false
+          # ── Windows ──
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            binary: codecast-daemon-windows-x64.exe
+            cross: false
+          - target: aarch64-pc-windows-msvc
+            runner: windows-latest
+            binary: codecast-daemon-windows-arm64.exe
+            cross: false
 
     runs-on: ${{ matrix.runner }}
     steps:
@@ -74,6 +93,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+
+      # Cross-compilation dependencies for Linux arm64
+      - name: Install cross-compilation tools (Linux arm64)
+        if: matrix.cross && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
+          echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
@@ -102,18 +130,17 @@ jobs:
       - name: Collect daemon binaries
         run: |
           mkdir -p daemon-binaries/
-          cp artifacts/codecast-daemon-linux-x64/codecast-daemon-linux-x64 daemon-binaries/
-          cp artifacts/codecast-daemon-windows-x64.exe/codecast-daemon-windows-x64.exe daemon-binaries/
-          cp artifacts/codecast-daemon-macos-arm64/codecast-daemon-macos-arm64 daemon-binaries/
-          chmod +x daemon-binaries/codecast-daemon-*
+          for dir in artifacts/codecast-daemon-*/; do
+            cp "$dir"/* daemon-binaries/ 2>/dev/null || true
+          done
+          chmod +x daemon-binaries/codecast-daemon-* 2>/dev/null || true
+          echo "Release artifacts:"
+          ls -la daemon-binaries/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            daemon-binaries/codecast-daemon-linux-x64
-            daemon-binaries/codecast-daemon-windows-x64.exe
-            daemon-binaries/codecast-daemon-macos-arm64
+          files: daemon-binaries/*
           generate_release_notes: true
 
   pypi-publish:

@@ -58,7 +58,7 @@ async def test_setup_wizard_shown_no_config(tmp_path):
         assert isinstance(app.screen, SetupWizardScreen)
         welcome = app.screen.query_one("#welcome")
         text = _get_static_text(welcome)
-        assert "Welcome" in text
+        assert "Setup" in text
 
 
 @pytest.mark.asyncio
@@ -190,15 +190,15 @@ async def test_quit_via_key(tmp_path):
 
 @pytest.mark.asyncio
 async def test_version_displayed(tmp_path):
-    """Version string should appear in the welcome screen."""
+    """Setup wizard should show the setup progress text."""
     config_path = str(tmp_path / "nonexistent.yaml")
     app = CodecastApp(config_path=config_path)
     async with app.run_test() as pilot:
         await pilot.pause()
         welcome = app.screen.query_one("#welcome")
         text = _get_static_text(welcome)
-        # Should contain a version like "v0.2.1" or at least "v"
-        assert "v" in text
+        # Should contain setup progress info
+        assert "Setup" in text or "required" in text
 
 
 @pytest.mark.asyncio

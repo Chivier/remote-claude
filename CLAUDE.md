@@ -275,6 +275,44 @@ The lint script runs:
 - **Python:** `ruff check` + `ruff format` on `src/head/` and `tests/`
 - **Rust:** `cargo clippy` (with `-D warnings`) + `cargo fmt`
 
+## Version Management
+
+**Single source of truth:** `pyproject.toml` `[project].version`
+
+All version files are kept in sync:
+
+| File | Format | Role |
+|------|--------|------|
+| `pyproject.toml` | `version = "X.Y.Z"` | Source of truth (Python package) |
+| `src/head/__version__.py` | `__version__ = "X.Y.Z"` | Runtime version for Python code |
+| `Cargo.toml` | `version = "X.Y.Z"` | Rust daemon version |
+
+**To bump the version:**
+
+```bash
+./scripts/bump-version.sh 0.3.0    # Updates all three files
+./scripts/bump-version.sh           # Shows current version
+```
+
+**Release flow:**
+1. `./scripts/bump-version.sh X.Y.Z`
+2. Commit: `git add -A && git commit -m 'chore: bump version to X.Y.Z'`
+3. Tag & push: `git tag vX.Y.Z && git push --tags`
+4. CI builds daemon binaries for 6 platforms and publishes to GitHub Releases + PyPI
+
+**CI daemon build matrix** (`.github/workflows/release.yml`):
+
+| Asset name | Platform | Arch |
+|---|---|---|
+| `codecast-daemon-linux-x64` | Linux | x86_64 |
+| `codecast-daemon-linux-arm64` | Linux | aarch64 (cross-compiled) |
+| `codecast-daemon-macos-arm64` | macOS | Apple Silicon |
+| `codecast-daemon-macos-x64` | macOS | Intel |
+| `codecast-daemon-windows-x64.exe` | Windows | x86_64 |
+| `codecast-daemon-windows-arm64.exe` | Windows | aarch64 |
+
+**TUI auto-install:** When the daemon binary is missing, the TUI downloads the matching asset from `github.com/Chivier/codecast/releases/download/vX.Y.Z/<asset>` and saves it to `~/.codecast/daemon/codecast-daemon`. If no pre-built binary exists for the platform, it falls back to building from source (installing Rust via rustup if needed). The platform→asset mapping lives in `src/head/daemon_installer.py:PLATFORM_ASSET_MAP` and must stay in sync with the CI matrix.
+
 ## Testing
 
 ### Test Suite Overview
