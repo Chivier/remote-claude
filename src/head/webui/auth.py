@@ -15,9 +15,16 @@ import secrets
 from pathlib import Path
 from typing import Optional
 
+from typing import Any
+
 from aiohttp import web
 
 logger = logging.getLogger(__name__)
+
+# Typed app keys (avoids NotAppKeyWarning)
+config_key: web.AppKey[Any] = web.AppKey("config")
+bind_key: web.AppKey[str] = web.AppKey("bind", str)
+session_tokens_key: web.AppKey[set] = web.AppKey("session_tokens", set)
 
 SECRET_FILE = Path.home() / ".codecast" / "webui_secret"
 
@@ -63,7 +70,7 @@ def requires_auth(bind: str) -> bool:
 async def auth_middleware(request: web.Request, handler):
     """Middleware that enforces authentication when binding to 0.0.0.0."""
     app = request.app
-    bind = app.get("bind", "127.0.0.1")
+    bind = app.get(bind_key, "127.0.0.1")
 
     if not requires_auth(bind):
         return await handler(request)
@@ -78,7 +85,7 @@ async def auth_middleware(request: web.Request, handler):
 
     # Check session cookie
     session_token = request.cookies.get("codecast_session")
-    valid_tokens: set = app.get("session_tokens", set())
+    valid_tokens: set = app.get(session_tokens_key, set())
 
     if session_token and session_token in valid_tokens:
         return await handler(request)

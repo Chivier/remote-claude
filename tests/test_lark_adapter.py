@@ -5,7 +5,7 @@ import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
@@ -243,7 +243,7 @@ class TestLarkAdapterBasic:
 
     def test_set_input_handler(self):
         adapter = _make_adapter()
-        handler = AsyncMock()
+        handler = MagicMock()
         adapter.set_input_handler(handler)
         assert adapter._on_input is handler
 
@@ -300,7 +300,7 @@ class TestLarkEventHandling:
 
     def test_ignores_bot_messages(self):
         adapter = _make_adapter()
-        handler = AsyncMock()
+        handler = MagicMock()
         adapter.set_input_handler(handler)
         data = self._make_event_data(sender_type="app")
         adapter._handle_message_event(data)
@@ -308,7 +308,7 @@ class TestLarkEventHandling:
 
     def test_filters_by_allowed_chats(self):
         adapter = _make_adapter(allowed_chats=["oc_allowed"])
-        handler = AsyncMock()
+        handler = MagicMock()
         adapter.set_input_handler(handler)
         data = self._make_event_data(chat_id="oc_blocked")
         adapter._handle_message_event(data)
@@ -321,7 +321,7 @@ class TestLarkEventHandling:
         mock_get_loop.return_value = mock_loop
 
         adapter = _make_adapter()
-        handler = AsyncMock()
+        handler = MagicMock()
         adapter.set_input_handler(handler)
 
         data = self._make_event_data(
@@ -343,7 +343,7 @@ class TestLarkEventHandling:
         mock_get_loop.return_value = mock_loop
 
         adapter = _make_adapter()
-        handler = AsyncMock()
+        handler = MagicMock()
         adapter.set_input_handler(handler)
 
         data = self._make_event_data(open_id="ou_user42")
@@ -354,7 +354,7 @@ class TestLarkEventHandling:
 
     def test_ignores_empty_text(self):
         adapter = _make_adapter()
-        handler = AsyncMock()
+        handler = MagicMock()
         adapter.set_input_handler(handler)
         data = self._make_event_data(content_json='{"text": ""}')
         adapter._handle_message_event(data)
@@ -362,7 +362,7 @@ class TestLarkEventHandling:
 
     def test_ignores_invalid_json(self):
         adapter = _make_adapter()
-        handler = AsyncMock()
+        handler = MagicMock()
         adapter.set_input_handler(handler)
         data = self._make_event_data(content_json="not json")
         adapter._handle_message_event(data)

@@ -203,13 +203,13 @@ class TestSendMessage:
         assert handle.message_id == "0"
 
     @pytest.mark.asyncio
+    @pytest.mark.filterwarnings("ignore::DeprecationWarning")
     async def test_send_message_retry_after(self):
         """Should sleep and retry on RetryAfter error."""
         from telegram.error import RetryAfter
 
         adapter = make_adapter()
         msg = make_message(42)
-        # RetryAfter takes retry_after as a read-only property set via constructor
         retry_err = RetryAfter(0)
         adapter._bot.send_message = AsyncMock(side_effect=[retry_err, msg])
 

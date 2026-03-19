@@ -14,7 +14,13 @@ import aiohttp_jinja2
 import jinja2
 from aiohttp import web
 
-from .auth import auth_middleware, requires_auth
+from .auth import (
+    auth_middleware,
+    bind_key,
+    config_key,
+    requires_auth,
+    session_tokens_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +35,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 @aiohttp_jinja2.template("dashboard.html")
 async def dashboard(request: web.Request) -> dict[str, Any]:
-    config = request.app.get("config")
+    config = request.app.get(config_key)
     peers = _get_peers(config)
     return {
         "title": "Dashboard",
@@ -41,7 +47,7 @@ async def dashboard(request: web.Request) -> dict[str, Any]:
 
 @aiohttp_jinja2.template("peers.html")
 async def peers_page(request: web.Request) -> dict[str, Any]:
-    config = request.app.get("config")
+    config = request.app.get(config_key)
     peers = _get_peers(config)
     return {
         "title": "Peers",
@@ -59,8 +65,8 @@ async def sessions_page(request: web.Request) -> dict[str, Any]:
 
 @aiohttp_jinja2.template("settings.html")
 async def settings_page(request: web.Request) -> dict[str, Any]:
-    config = request.app.get("config")
-    bind = request.app.get("bind", "127.0.0.1")
+    config = request.app.get(config_key)
+    bind = request.app.get(bind_key, "127.0.0.1")
     return {
         "title": "Settings",
         "config": config,
@@ -80,7 +86,7 @@ async def login_page(request: web.Request) -> dict[str, Any]:
 
 async def api_status(request: web.Request) -> web.Response:
     """Return an HTML fragment with current system status."""
-    config = request.app.get("config")
+    config = request.app.get(config_key)
     peers = _get_peers(config)
     html = (
         f'<div class="status-grid">'
@@ -94,7 +100,7 @@ async def api_status(request: web.Request) -> web.Response:
 
 async def api_peers(request: web.Request) -> web.Response:
     """Return an HTML fragment with the peer list."""
-    config = request.app.get("config")
+    config = request.app.get(config_key)
     peers = _get_peers(config)
     if not peers:
         html = '<p class="muted">No peers configured.</p>'
@@ -156,9 +162,9 @@ async def create_app(config: Any = None, bind: str = "127.0.0.1") -> web.Applica
     )
 
     # Store config and bind address
-    app["config"] = config
-    app["bind"] = bind
-    app["session_tokens"] = set()
+    app[config_key] = config
+    app[bind_key] = bind
+    app[session_tokens_key] = set()
 
     # Full-page routes
     app.router.add_get("/", dashboard)
