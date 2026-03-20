@@ -648,6 +648,8 @@ async def test_sessions_screen_h_pops_when_no_filter(tmp_path):
 @pytest.mark.asyncio
 async def test_start_daemon_screen_shows_stopped(tmp_path):
     """StartDaemonScreen should show 'stopped' when daemon is not running."""
+    import asyncio
+
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.dump({"default_mode": "auto"}))
     app = CodecastApp(config_path=str(config_path))
@@ -657,18 +659,22 @@ async def test_start_daemon_screen_shows_stopped(tmp_path):
             patch("head.tui.screens._check_daemon_running", return_value=(False, None)),
             patch("head.tui.screens._check_claude_cli", return_value=True),
             patch("head.peer_manager.resolve_daemon_binary", return_value="/usr/bin/fake-daemon"),
+            patch("head.daemon_installer.get_daemon_version", return_value="0.2.13"),
         ):
             app.push_screen(StartDaemonScreen(str(config_path)))
+            await asyncio.sleep(0.5)
             await pilot.pause()
-        assert isinstance(app.screen, StartDaemonScreen)
-        status = app.screen.query_one("#daemon_status")
-        text = _get_static_text(status)
-        assert "stopped" in text
+            assert isinstance(app.screen, StartDaemonScreen)
+            status = app.screen.query_one("#daemon_status")
+            text = _get_static_text(status)
+            assert "stopped" in text
 
 
 @pytest.mark.asyncio
 async def test_start_daemon_screen_shows_running(tmp_path):
     """StartDaemonScreen should show 'running' with port when daemon is up."""
+    import asyncio
+
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.dump({"default_mode": "auto"}))
     app = CodecastApp(config_path=str(config_path))
@@ -679,18 +685,23 @@ async def test_start_daemon_screen_shows_running(tmp_path):
             patch("head.tui.screens._check_claude_cli", return_value=True),
             patch("head.cli._read_pid_file", return_value=12345),
             patch("head.cli._pid_alive", return_value=True),
+            patch("head.peer_manager.resolve_daemon_binary", return_value="/usr/bin/fake-daemon"),
+            patch("head.daemon_installer.get_daemon_version", return_value="0.2.13"),
         ):
             app.push_screen(StartDaemonScreen(str(config_path)))
+            await asyncio.sleep(0.5)
             await pilot.pause()
-        status = app.screen.query_one("#daemon_status")
-        text = _get_static_text(status)
-        assert "running" in text
-        assert "9100" in text
+            status = app.screen.query_one("#daemon_status")
+            text = _get_static_text(status)
+            assert "running" in text
+            assert "9100" in text
 
 
 @pytest.mark.asyncio
 async def test_start_daemon_screen_no_claude_cli(tmp_path):
     """StartDaemonScreen should warn when Claude CLI is not available."""
+    import asyncio
+
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.dump({"default_mode": "auto"}))
     app = CodecastApp(config_path=str(config_path))
@@ -699,17 +710,22 @@ async def test_start_daemon_screen_no_claude_cli(tmp_path):
         with (
             patch("head.tui.screens._check_daemon_running", return_value=(False, None)),
             patch("head.tui.screens._check_claude_cli", return_value=False),
+            patch("head.peer_manager.resolve_daemon_binary", return_value="/usr/bin/fake-daemon"),
+            patch("head.daemon_installer.get_daemon_version", return_value=""),
         ):
             app.push_screen(StartDaemonScreen(str(config_path)))
+            await asyncio.sleep(0.5)
             await pilot.pause()
-        status = app.screen.query_one("#daemon_status")
-        text = _get_static_text(status)
-        assert "not found" in text
+            status = app.screen.query_one("#daemon_status")
+            text = _get_static_text(status)
+            assert "not found" in text
 
 
 @pytest.mark.asyncio
 async def test_start_daemon_screen_start_option(tmp_path):
     """StartDaemonScreen should show 'Start daemon' when stopped and CLI available."""
+    import asyncio
+
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.dump({"default_mode": "auto"}))
     app = CodecastApp(config_path=str(config_path))
@@ -719,12 +735,14 @@ async def test_start_daemon_screen_start_option(tmp_path):
             patch("head.tui.screens._check_daemon_running", return_value=(False, None)),
             patch("head.tui.screens._check_claude_cli", return_value=True),
             patch("head.peer_manager.resolve_daemon_binary", return_value="/usr/bin/fake-daemon"),
+            patch("head.daemon_installer.get_daemon_version", return_value="0.2.13"),
         ):
             app.push_screen(StartDaemonScreen(str(config_path)))
+            await asyncio.sleep(0.5)
             await pilot.pause()
-        menu = app.screen.query_one("#daemon_menu")
-        option_ids = [opt.id for opt in menu._options]
-        assert "start" in option_ids
+            menu = app.screen.query_one("#daemon_menu")
+            option_ids = [opt.id for opt in menu._options]
+            assert "start" in option_ids
 
 
 # ---------------------------------------------------------------------------
@@ -1420,7 +1438,9 @@ async def test_dashboard_open_machine_with_selection(tmp_path):
 
 @pytest.mark.asyncio
 async def test_status_panel_bot_summary(tmp_path):
-    """StatusPanel should report configured bot names."""
+    """StatusPanel should report configured bot names via _gather_status."""
+    from head.tui.widgets import _gather_status
+
     config_path = tmp_path / "config.yaml"
     cfg = {
         "default_mode": "auto",
@@ -1430,13 +1450,14 @@ async def test_status_panel_bot_summary(tmp_path):
         },
     }
     config_path.write_text(yaml.dump(cfg))
-    app = CodecastApp(config_path=str(config_path))
-    async with app.run_test() as pilot:
-        await pilot.pause()
-        status = app.screen.query_one("#status", StatusPanel)
-        bots = status._get_bot_summary()
-        assert "Discord" in bots
-        assert "Telegram" in bots
+    with (
+        patch("head.tui.widgets.read_port_file", return_value=None),
+        patch("head.tui.widgets.read_pid_file", return_value=None),
+        patch("head.tui.widgets.find_process", return_value=None),
+    ):
+        info = _gather_status(str(config_path))
+    assert "Discord" in info["bots"]
+    assert "Telegram" in info["bots"]
 
 
 # ---------------------------------------------------------------------------

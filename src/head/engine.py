@@ -27,6 +27,7 @@ from .config import (
 )
 from .ssh_manager import SSHManager
 from .session_router import SessionRouter
+from .__version__ import __version__
 from .daemon_client import DaemonClient, DaemonError, DaemonConnectionError
 from .message_formatter import (
     split_message,
@@ -154,7 +155,7 @@ class BotEngine:
                 restart_file.unlink()
                 await self.send_message(
                     channel_id,
-                    f"**{reason} complete.** Head node is back online.",
+                    f"**{reason} complete.** Head node is back online. (v{__version__})",
                 )
         except Exception as e:
             logger.warning(f"Failed to process restart notify: {e}")
@@ -1177,7 +1178,7 @@ class BotEngine:
             )
             return
 
-        await self.send_message(channel_id, "Restarting head node...")
+        await self.send_message(channel_id, f"Restarting head node... (v{__version__})")
         logger.info(f"Restart requested by user {user_id}")
 
         await asyncio.sleep(1)
@@ -1193,7 +1194,7 @@ class BotEngine:
             return
 
         project_dir = str(Path(__file__).resolve().parent.parent)
-        await self.send_message(channel_id, "Pulling latest code...")
+        await self.send_message(channel_id, f"Pulling latest code... (v{__version__})")
 
         try:
             result = await asyncio.to_thread(
@@ -1229,7 +1230,7 @@ class BotEngine:
         if "Already up to date" in stdout:
             await self.send_message(
                 channel_id,
-                f"Already up to date. No restart needed.\n```\n{stdout}\n```",
+                f"Already up to date (v{__version__}). No restart needed.\n```\n{stdout}\n```",
             )
             return
 

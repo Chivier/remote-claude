@@ -807,30 +807,97 @@ class StartDaemonScreen(Screen):
         self._refresh_ui()
 
     def _refresh_ui(self) -> None:
-        """Rebuild status text and menu options based on current state."""
-        from head.cli import _DAEMON_PID_FILE, _pid_alive, _read_pid_file
-        from head.daemon_installer import get_current_version, get_daemon_version
-        from head.peer_manager import resolve_daemon_binary
+        """Show loading state, then gather daemon info in a background thread."""
+        if self._installing:
+            # During installation, update synchronously (no blocking checks needed)
+            self._apply_ui_state(self._installing, None)
+            return
 
-        daemon_running, daemon_port = _check_daemon_running()
-        daemon_pid = _read_pid_file(_DAEMON_PID_FILE)
-        claude_available = _check_claude_cli()
-        daemon_binary = resolve_daemon_binary()
-
-        # Version check
-        codecast_version = get_current_version()
-        daemon_version = get_daemon_version(daemon_binary) if daemon_binary else ""
-        version_mismatch = (
-            daemon_binary is not None and daemon_version and codecast_version and daemon_version != codecast_version
+        # Show loading state immediately so UI is responsive
+        status_widget = self.query_one("#daemon_status", Static)
+        status_widget.update(
+            "[bold cyan]Daemon[/bold cyan] — the agent process manager\n[dim]Checking daemon status...[/dim]"
         )
+        menu = self.query_one("#daemon_menu", OptionList)
+        menu.clear_options()
+        menu.add_option(Option("[dim]Loading...[/dim]", id="noop"))
 
+        import threading
+
+        def _gather() -> dict:
+            """Run all blocking checks off the main thread."""
+            from head.cli import _DAEMON_PID_FILE, _pid_alive, _read_pid_file
+            from head.daemon_installer import get_current_version, get_daemon_version
+            from head.peer_manager import resolve_daemon_binary
+
+            daemon_running, daemon_port = _check_daemon_running()
+            daemon_pid = _read_pid_file(_DAEMON_PID_FILE)
+            claude_available = _check_claude_cli()
+            daemon_binary = resolve_daemon_binary()
+            codecast_version = get_current_version()
+            daemon_version = get_daemon_version(daemon_binary) if daemon_binary else ""
+            pid_alive = daemon_pid is not None and _pid_alive(daemon_pid)
+
+            return dict(
+                daemon_running=daemon_running,
+                daemon_port=daemon_port,
+                daemon_pid=daemon_pid,
+                pid_alive=pid_alive,
+                claude_available=claude_available,
+                daemon_binary=daemon_binary,
+                codecast_version=codecast_version,
+                daemon_version=daemon_version,
+            )
+
+        def _run() -> None:
+            try:
+                info = _gather()
+            except Exception:
+                info = None
+            try:
+                self.app.call_from_thread(self._apply_ui_state, self._installing, info)
+            except Exception:
+                pass  # Screen may already be popped
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _apply_ui_state(self, installing: bool, info: dict | None) -> None:
+        """Update widgets from gathered state (always called on the main thread)."""
         explanation = (
             "[bold cyan]Daemon[/bold cyan] — the agent process manager\n"
             "[dim]Manages Claude/Codex CLI processes on this machine.[/dim]\n"
         )
 
+        status_widget = self.query_one("#daemon_status", Static)
+        menu = self.query_one("#daemon_menu", OptionList)
+        menu.clear_options()
+
+        if installing:
+            status_widget.update(explanation + "Status: [dim]Installing...[/dim]")
+            menu.add_option(Option("[dim]Installing...[/dim]", id="noop"))
+            menu.add_option(Option("Back", id="back"))
+            return
+
+        if info is None:
+            status_widget.update(explanation + "Status: [bold red]Error checking daemon state[/bold red]")
+            menu.add_option(Option("Back", id="back"))
+            return
+
+        daemon_running = info["daemon_running"]
+        daemon_port = info["daemon_port"]
+        daemon_pid = info["daemon_pid"]
+        pid_alive = info["pid_alive"]
+        claude_available = info["claude_available"]
+        daemon_binary = info["daemon_binary"]
+        codecast_version = info["codecast_version"]
+        daemon_version = info["daemon_version"]
+
+        version_mismatch = (
+            daemon_binary is not None and daemon_version and codecast_version and daemon_version != codecast_version
+        )
+
         if daemon_running:
-            pid_part = f" [dim](pid={daemon_pid})[/dim]" if daemon_pid and _pid_alive(daemon_pid) else ""
+            pid_part = f" [dim](pid={daemon_pid})[/dim]" if pid_alive else ""
             status = (
                 f"Status: [bold green]● running[/bold green] on port [bold white]{daemon_port}[/bold white]{pid_part}"
             )
@@ -870,15 +937,9 @@ class StartDaemonScreen(Screen):
                 "[dim]Select 'Update daemon' to download the matching version.[/dim]"
             )
 
-        status_widget = self.query_one("#daemon_status", Static)
         status_widget.update(explanation + status)
 
-        menu = self.query_one("#daemon_menu", OptionList)
-        menu.clear_options()
-
-        if self._installing:
-            menu.add_option(Option("[dim]Installing...[/dim]", id="noop"))
-        elif daemon_running:
+        if daemon_running:
             menu.add_option(Option("Stop daemon", id="stop"))
             menu.add_option(Option("Restart daemon", id="restart"))
             if version_mismatch:

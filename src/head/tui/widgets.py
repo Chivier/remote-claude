@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 from textual.widgets import DataTable, Static
@@ -22,6 +23,109 @@ from head.process_monitor import (
 )
 
 
+def _gather_status(config_path: str) -> dict:
+    """Gather all status info (may block on HTTP/subprocess). Run off main thread."""
+    # Daemon
+    port = read_port_file()
+    daemon_pid = read_pid_file(DAEMON_PID_FILE) or find_process("codecast-daemon")
+    daemon_running = port is not None and daemon_healthy(port)
+
+    # Head
+    head_pid = read_pid_file(HEAD_PID_FILE)
+    head_running = head_pid is not None and pid_alive(head_pid)
+
+    # WebUI
+    webui_pid = read_pid_file(WEBUI_PID_FILE)
+    webui_port = read_pid_file(WEBUI_PORT_FILE)
+    webui_running = webui_pid is not None and pid_alive(webui_pid)
+
+    # CLIs
+    claude_path = shutil.which("claude")
+    codex_path = shutil.which("codex")
+
+    # Bots
+    bots: list[str] = []
+    if config_path:
+        try:
+            from head.config import load_config
+
+            cfg = load_config(config_path)
+            if cfg.bot:
+                if cfg.bot.discord and getattr(cfg.bot.discord, "token", None):
+                    bots.append("Discord")
+                if cfg.bot.telegram and getattr(cfg.bot.telegram, "token", None):
+                    bots.append("Telegram")
+                if getattr(cfg.bot, "lark", None) and getattr(cfg.bot.lark, "app_id", None):
+                    bots.append("Lark")
+        except Exception:
+            pass
+
+    return dict(
+        port=port,
+        daemon_pid=daemon_pid,
+        daemon_running=daemon_running,
+        head_pid=head_pid,
+        head_running=head_running,
+        webui_pid=webui_pid,
+        webui_port=webui_port,
+        webui_running=webui_running,
+        claude_path=claude_path,
+        codex_path=codex_path,
+        bots=bots,
+    )
+
+
+def _render_status(info: dict) -> str:
+    """Build Rich markup status text from gathered info (no I/O)."""
+    lines: list[str] = []
+
+    # Daemon
+    if info["daemon_running"]:
+        pid_part = f" [dim](pid={info['daemon_pid']})[/dim]" if info["daemon_pid"] else ""
+        lines.append(
+            f"[bold]Daemon[/bold]  [dim](agent manager)[/dim]  "
+            f"[bold green]● running[/bold green] on port [bold white]{info['port']}[/bold white]{pid_part}"
+        )
+    else:
+        lines.append("[bold]Daemon[/bold]  [dim](agent manager)[/dim]  [bold red]○ stopped[/bold red]")
+
+    # Head
+    if info["head_running"]:
+        bots = info["bots"]
+        bot_info = f" | bots: [bold white]{', '.join(bots)}[/bold white]" if bots else ""
+        lines.append(
+            f"[bold]Head[/bold]    [dim](chat bots)[/dim]      "
+            f"[bold green]● running[/bold green] [dim](pid={info['head_pid']})[/dim]{bot_info}"
+        )
+    else:
+        lines.append("[bold]Head[/bold]    [dim](chat bots)[/dim]      [bold red]○ stopped[/bold red]")
+
+    # WebUI
+    if info["webui_running"]:
+        lines.append(
+            f"[bold]WebUI[/bold]   [dim](dashboard)[/dim]      "
+            f"[bold green]● running[/bold green] on [bold white]http://127.0.0.1:{info['webui_port']}[/bold white]"
+            f" [dim](pid={info['webui_pid']})[/dim]"
+        )
+    else:
+        lines.append("[bold]WebUI[/bold]   [dim](dashboard)[/dim]      [bold red]○ stopped[/bold red]")
+
+    # CLIs
+    cli_parts: list[str] = []
+    if info["claude_path"]:
+        cli_parts.append("Claude [green]✓[/green]")
+    if info["codex_path"]:
+        cli_parts.append("Codex [green]✓[/green]")
+    if cli_parts:
+        lines.append(f"[bold]CLIs[/bold]    [dim](AI agents)[/dim]       {' | '.join(cli_parts)}")
+    else:
+        lines.append(
+            "[bold]CLIs[/bold]    [dim](AI agents)[/dim]       [bold red]✗ none found[/bold red] [dim](install claude or codex)[/dim]"
+        )
+
+    return "\n".join(lines)
+
+
 class StatusPanel(Static):
     """Displays component status with colored indicators."""
 
@@ -36,91 +140,40 @@ class StatusPanel(Static):
     def __init__(self, config_path: str = "", **kwargs) -> None:
         super().__init__("", **kwargs)
         self.config_path = config_path
+        self._refresh_pending = False
 
     def on_mount(self) -> None:
-        self.update(self._build_status())
-        self.set_interval(self.REFRESH_INTERVAL, self.refresh_status)
+        self.update("[dim]Loading status...[/dim]")
+        self._async_refresh()
+        self.set_interval(self.REFRESH_INTERVAL, self._async_refresh)
 
-    def _get_bot_summary(self) -> list[str]:
-        """Return list of configured bot descriptions from config."""
-        if not self.config_path:
-            return []
-        try:
-            from head.config import load_config
+    def _async_refresh(self) -> None:
+        """Kick off a background thread to gather status, then update UI."""
+        if self._refresh_pending:
+            return  # Don't stack up concurrent refreshes
+        self._refresh_pending = True
 
-            cfg = load_config(self.config_path)
-        except Exception:
-            return []
-        bots: list[str] = []
-        if cfg.bot:
-            if cfg.bot.discord and getattr(cfg.bot.discord, "token", None):
-                bots.append("Discord")
-            if cfg.bot.telegram and getattr(cfg.bot.telegram, "token", None):
-                bots.append("Telegram")
-            if getattr(cfg.bot, "lark", None) and getattr(cfg.bot.lark, "app_id", None):
-                bots.append("Lark")
-        return bots
+        def _run() -> None:
+            try:
+                info = _gather_status(self.config_path)
+                text = _render_status(info)
+            except Exception:
+                text = "[bold red]Error checking status[/bold red]"
+            try:
+                self.app.call_from_thread(self._apply_status, text)
+            except Exception:
+                pass  # Widget may be gone
 
-    def _build_status(self) -> str:
-        lines: list[str] = []
+        threading.Thread(target=_run, daemon=True).start()
 
-        # Daemon (agent process manager)
-        port = read_port_file()
-        daemon_pid = read_pid_file(DAEMON_PID_FILE) or find_process("codecast-daemon")
-        if port is not None and daemon_healthy(port):
-            pid_part = f" [dim](pid={daemon_pid})[/dim]" if daemon_pid else ""
-            lines.append(
-                f"[bold]Daemon[/bold]  [dim](agent manager)[/dim]  "
-                f"[bold green]● running[/bold green] on port [bold white]{port}[/bold white]{pid_part}"
-            )
-        else:
-            lines.append("[bold]Daemon[/bold]  [dim](agent manager)[/dim]  [bold red]○ stopped[/bold red]")
-
-        # Head Node (chat bot bridge)
-        head_pid = read_pid_file(HEAD_PID_FILE)
-        head_running = head_pid is not None and pid_alive(head_pid)
-        if head_running:
-            bots = self._get_bot_summary()
-            bot_info = f" | bots: [bold white]{', '.join(bots)}[/bold white]" if bots else ""
-            lines.append(
-                f"[bold]Head[/bold]    [dim](chat bots)[/dim]      "
-                f"[bold green]● running[/bold green] [dim](pid={head_pid})[/dim]{bot_info}"
-            )
-        else:
-            lines.append("[bold]Head[/bold]    [dim](chat bots)[/dim]      [bold red]○ stopped[/bold red]")
-
-        # WebUI (web dashboard)
-        webui_pid = read_pid_file(WEBUI_PID_FILE)
-        webui_port = read_pid_file(WEBUI_PORT_FILE)
-        if webui_pid is not None and pid_alive(webui_pid):
-            lines.append(
-                f"[bold]WebUI[/bold]   [dim](dashboard)[/dim]      "
-                f"[bold green]● running[/bold green] on [bold white]http://127.0.0.1:{webui_port}[/bold white]"
-                f" [dim](pid={webui_pid})[/dim]"
-            )
-        else:
-            lines.append("[bold]WebUI[/bold]   [dim](dashboard)[/dim]      [bold red]○ stopped[/bold red]")
-
-        # Claude CLI
-        claude_path = shutil.which("claude")
-        codex_path = shutil.which("codex")
-        cli_parts: list[str] = []
-        if claude_path:
-            cli_parts.append(f"Claude [green]✓[/green]")
-        if codex_path:
-            cli_parts.append(f"Codex [green]✓[/green]")
-        if cli_parts:
-            lines.append(f"[bold]CLIs[/bold]    [dim](AI agents)[/dim]       {' | '.join(cli_parts)}")
-        else:
-            lines.append(
-                "[bold]CLIs[/bold]    [dim](AI agents)[/dim]       [bold red]✗ none found[/bold red] [dim](install claude or codex)[/dim]"
-            )
-
-        return "\n".join(lines)
+    def _apply_status(self, text: str) -> None:
+        """Apply status text on the main thread."""
+        self._refresh_pending = False
+        self.update(text)
 
     def refresh_status(self) -> None:
-        """Re-check and update all status indicators."""
-        self.update(self._build_status())
+        """Re-check and update all status indicators (non-blocking)."""
+        self._async_refresh()
 
 
 class MachineTable(DataTable):
