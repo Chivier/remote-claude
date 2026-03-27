@@ -339,6 +339,14 @@ class TelegramAdapter:
             )
         )
 
+        # Fallback: unrecognized /commands are forwarded as plain messages to Claude
+        self._app.add_handler(
+            MessageHandler(
+                filters.TEXT & filters.COMMAND,
+                self._handle_telegram_message,
+            )
+        )
+
         # Register command menu
         try:
             await self._bot.set_my_commands(
