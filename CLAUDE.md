@@ -302,6 +302,36 @@ From Discord (admin only):
 
 Both commands use `os.execv()` to replace the process in-place and send a confirmation message after restart.
 
+### Deploying to Test Environment
+
+Use `scripts/deploy-test.sh` to build, upload, and install on a remote machine for testing.
+
+```bash
+# Default: deploy to artoria with venv at /home/chivier/.venvs/default
+./scripts/deploy-test.sh
+
+# Custom host and venv
+./scripts/deploy-test.sh myhost /path/to/venv
+
+# Also deploy the Rust daemon binary
+DEPLOY_DAEMON=1 ./scripts/deploy-test.sh
+```
+
+**What it does:**
+1. Builds Python sdist (`python -m build --sdist`)
+2. SCPs the tarball to the remote machine
+3. `pip install --force-reinstall --no-deps` into the remote venv
+4. Optionally builds + deploys the daemon binary (`DEPLOY_DAEMON=1`)
+5. Verifies the installed version
+
+**Test environment:** The default test host is `artoria` (SSH config alias), with venv at `/home/chivier/.venvs/default`. The daemon runs on the same machine.
+
+**After deploying**, run remote tests or start the head node:
+```bash
+ssh artoria 'source /home/chivier/.venvs/default/bin/activate && python -m pytest tests/ -v'
+ssh artoria 'source /home/chivier/.venvs/default/bin/activate && codecast start'
+```
+
 ## Linting
 
 **Always run lint before committing.** CI will reject PRs that fail lint.

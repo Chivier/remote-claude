@@ -101,19 +101,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
-      # Cross-compilation dependencies for Linux arm64 (musl)
-      - name: Install cross-compilation tools (Linux arm64 musl)
+      # Cross-compilation for Linux arm64 (musl) via cross
+      # Avoids musl.cc downloads which are unreliable (frequent timeouts)
+      - name: Install cross (Linux arm64)
         if: matrix.cross && matrix.target == 'aarch64-unknown-linux-musl'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools gcc-aarch64-linux-gnu
-          # Install aarch64 musl cross-compiler
-          sudo mkdir -p /usr/local/aarch64-linux-musl
-          curl -fsSL https://musl.cc/aarch64-linux-musl-cross.tgz | sudo tar xz -C /usr/local --strip-components=1
-          echo '[target.aarch64-unknown-linux-musl]' >> ~/.cargo/config.toml
-          echo 'linker = "/usr/local/bin/aarch64-linux-musl-gcc"' >> ~/.cargo/config.toml
+        run: cargo install cross --git https://github.com/cross-rs/cross
 
-      - name: Build
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Build (native)
+        if: "!matrix.cross"
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Rename binary (Unix)
