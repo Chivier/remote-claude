@@ -274,10 +274,15 @@ class BotEngine:
             elif cmd == "/help":
                 await self.cmd_help(channel_id)
             else:
-                await self.send_message(
-                    channel_id,
-                    f"Unknown command: `{cmd}`. Use `/help` for available commands.",
-                )
+                # Not a known codecast command — forward to Claude if session is active
+                session = self.router.resolve(channel_id)
+                if session:
+                    await self._forward_message(channel_id, text)
+                else:
+                    await self.send_message(
+                        channel_id,
+                        f"Unknown command: `{cmd}`. Use `/help` for available commands.",
+                    )
         except DaemonConnectionError as e:
             await self.send_message(channel_id, format_error(f"Cannot connect to daemon: {e}"))
         except DaemonError as e:
