@@ -92,6 +92,7 @@ class _AskUserQuestionView(discord.ui.View):
             if self._on_input:
                 await self._on_input(self._channel_id, option_text, interaction.user.id, None)
             self.stop()
+
         return callback
 
     async def _select_callback(self, interaction: discord.Interaction):

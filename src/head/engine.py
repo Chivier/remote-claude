@@ -1478,6 +1478,7 @@ After `/start` or `/resume`, send any message to interact with Claude."""
         input_data = event.get("input", {})
         if isinstance(input_data, str):
             import json as _json
+
             try:
                 input_data = _json.loads(input_data)
             except (ValueError, TypeError):
@@ -1493,9 +1494,7 @@ After `/start` or `/resume`, send any message to interact with Claude."""
         for header, options, multi_select in parsed:
             if options and hasattr(self.adapter, "send_question"):
                 try:
-                    await self.adapter.send_question(
-                        channel_id, header, options, multi_select
-                    )
+                    await self.adapter.send_question(channel_id, header, options, multi_select)
                 except Exception:
                     # Fallback to text if send_question fails
                     text = format_question_text(header, options, multi_select)
