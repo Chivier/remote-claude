@@ -88,3 +88,29 @@ def find_process(name: str) -> int | None:
     except (FileNotFoundError, ValueError):
         pass
     return None
+
+
+def find_all_processes(name: str) -> list[int]:
+    """Find all processes matching *name* using pgrep, returning their PIDs.
+
+    Excludes the current process. Returns empty list if none found.
+    """
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", name],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            pids = []
+            for line in result.stdout.strip().splitlines():
+                try:
+                    pid = int(line.strip())
+                    if pid != os.getpid():
+                        pids.append(pid)
+                except ValueError:
+                    continue
+            return pids
+    except FileNotFoundError:
+        pass
+    return []

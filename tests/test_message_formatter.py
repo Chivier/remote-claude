@@ -14,6 +14,7 @@ from head.message_formatter import (
     format_status,
     format_health,
     format_monitor,
+    format_buffer_status,
     _truncate,
 )
 from head.session_router import Session
@@ -679,6 +680,49 @@ class TestFormatMonitor:
 
 
 # ─── _truncate ───
+
+
+class TestFormatBufferStatus:
+    def test_basic_status_no_tools(self):
+        result = format_buffer_status(elapsed_secs=10, tool_names=[], tool_count=0)
+        assert "Thinking 10s" in result
+        assert "tool" not in result.lower()
+
+    def test_status_with_tools(self):
+        result = format_buffer_status(elapsed_secs=45, tool_names=["Read", "Edit", "Bash"], tool_count=12)
+        assert "Thinking 45s" in result
+        assert "Read" in result
+        assert "Edit" in result
+        assert "Bash" in result
+        assert "12 total" in result
+
+    def test_status_with_minutes(self):
+        result = format_buffer_status(elapsed_secs=95, tool_names=["Grep"], tool_count=5)
+        assert "1m 35s" in result
+
+    def test_rolling_window_max_three(self):
+        result = format_buffer_status(
+            elapsed_secs=30,
+            tool_names=["Read", "Edit", "Bash"],
+            tool_count=20,
+        )
+        assert "Read" in result
+        assert "Edit" in result
+        assert "Bash" in result
+
+    def test_done_status(self):
+        result = format_buffer_status(elapsed_secs=60, tool_names=[], tool_count=8, done=True)
+        assert "Done in 1m 00s" in result
+        assert "8 tool calls" in result
+
+    def test_done_status_no_tools(self):
+        result = format_buffer_status(elapsed_secs=5, tool_names=[], tool_count=0, done=True)
+        assert "Done in 5s" in result
+        assert "tool" not in result.lower()
+
+    def test_zero_seconds(self):
+        result = format_buffer_status(elapsed_secs=0, tool_names=[], tool_count=0)
+        assert "Thinking 0s" in result
 
 
 class TestTruncate:

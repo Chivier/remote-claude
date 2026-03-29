@@ -406,6 +406,41 @@ def format_question_text(header: str, options: list[str], multi_select: bool = F
     return "\n".join(lines)
 
 
+def format_buffer_status(
+    elapsed_secs: int,
+    tool_names: list[str],
+    tool_count: int,
+    done: bool = False,
+) -> str:
+    """Format a buffer mode status line.
+
+    Args:
+        elapsed_secs: Seconds elapsed since stream started.
+        tool_names: Rolling window of last 3 unique tool names.
+        tool_count: Total number of tool calls so far.
+        done: If True, format as a completion message.
+
+    Returns:
+        Status string like "Thinking 45s | Read, Edit, Bash (12 total)"
+    """
+    mins, secs = divmod(elapsed_secs, 60)
+    if mins > 0:
+        time_str = f"{mins}m {secs:02d}s"
+    else:
+        time_str = f"{secs}s"
+
+    if done:
+        if tool_count > 0:
+            return f"Done in {time_str} | {tool_count} tool calls"
+        return f"Done in {time_str}"
+
+    if tool_count > 0 and tool_names:
+        tools_str = ", ".join(tool_names)
+        return f"Thinking {time_str} | {tools_str} ({tool_count} total)"
+
+    return f"Thinking {time_str}"
+
+
 def _truncate(text: str, max_len: int) -> str:
     """Truncate text with ellipsis."""
     if len(text) <= max_len:

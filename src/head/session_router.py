@@ -31,7 +31,7 @@ class Session:
     created_at: str
     updated_at: str
     name: Optional[str] = None  # human-friendly name like "bright-falcon"
-    tool_display: str = "timer"  # timer | append | batch
+    tool_display: str = "buffer"  # buffer | timer | append | batch
     cli_type: str = "claude"  # claude | codex | gemini | opencode
 
 
@@ -103,7 +103,7 @@ class SessionRouter:
         """Add 'tool_display' column to sessions table if not present."""
         columns = [row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()]
         if "tool_display" not in columns:
-            conn.execute("ALTER TABLE sessions ADD COLUMN tool_display TEXT NOT NULL DEFAULT 'timer'")
+            conn.execute("ALTER TABLE sessions ADD COLUMN tool_display TEXT NOT NULL DEFAULT 'buffer'")
             logger.info("Migrated sessions: added 'tool_display' column")
             conn.commit()
 

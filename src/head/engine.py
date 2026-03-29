@@ -35,6 +35,7 @@ from .message_formatter import (
     compress_tool_messages,
     format_activity_message,
     format_tool_line,
+    format_buffer_status,
     format_machine_list,
     format_session_list,
     format_error,
@@ -625,22 +626,23 @@ class BotEngine:
             await self.send_message(channel_id, format_error("Failed to set model"))
 
     async def cmd_tool_display(self, channel_id: str, args: list[str]) -> None:
-        """/tool-display <timer|append|batch> - Switch tool display mode."""
+        """/tool-display <timer|append|batch|buffer> - Switch tool display mode."""
         if not args:
             await self.send_message(
                 channel_id,
-                "Usage: `/tool-display <timer|append|batch>`\n"
-                "  **timer** - Show working timer, send all results at end (default)\n"
+                "Usage: `/tool-display <timer|append|batch|buffer>`\n"
+                "  **buffer** - Thinking status + tool summary, merged result at end (default)\n"
+                "  **timer** - Show working timer, send all results at end\n"
                 "  **append** - Show each tool call progressively\n"
                 "  **batch** - Accumulate tool calls, show summary at end",
             )
             return
 
         mode = args[0].lower()
-        if mode not in ("timer", "append", "batch"):
+        if mode not in ("timer", "append", "batch", "buffer"):
             await self.send_message(
                 channel_id,
-                "Invalid tool display mode. Use: `timer`, `append`, or `batch`",
+                "Invalid tool display mode. Use: `buffer`, `timer`, `append`, or `batch`",
             )
             return
 
@@ -1652,6 +1654,130 @@ After `/start` or `/resume`, send any message to interact with Claude."""
 
                 if result_texts:
                     full_text = "\n\n".join(result_texts)
+                    for chunk in split_message(full_text):
+                        await self.send_message(channel_id, chunk)
+                    if self.file_forward:
+                        await self._detect_and_forward_files(channel_id, session.machine_id, full_text)
+
+            # ── Buffer mode: "Thinking Xs | Read, Edit, Bash (N total)" ──
+            elif tool_display == "buffer":
+                buffer_msg: Optional[MessageHandle] = None
+                buffer_start = time.time()
+                result_texts_buf: list[str] = []
+                buffer_done = False
+                buffer_tool_count = 0
+                buffer_recent_tools: list[str] = []  # rolling window of last 3 unique
+
+                BUFFER_UPDATE_INTERVAL = 30  # seconds between status edits
+
+                def _buffer_elapsed() -> int:
+                    return int(time.time() - buffer_start)
+
+                async def _buffer_update_loop() -> None:
+                    """Edit the status message every BUFFER_UPDATE_INTERVAL seconds."""
+                    nonlocal buffer_msg
+                    while not buffer_done:
+                        await asyncio.sleep(BUFFER_UPDATE_INTERVAL)
+                        if buffer_done or buffer_msg is None:
+                            break
+                        try:
+                            status = format_buffer_status(_buffer_elapsed(), buffer_recent_tools, buffer_tool_count)
+                            await self.edit_message(buffer_msg, status)
+                        except Exception:
+                            pass
+
+                buffer_update_task: Optional[asyncio.Task] = None
+
+                async for event in self.daemon.send_message(local_port, session.daemon_session_id, text):
+                    if channel_id in self._stop_requested:
+                        break
+
+                    event_type = event.get("type", "")
+
+                    if event_type == "ping":
+                        continue
+
+                    # AskUserQuestion — present interactively regardless of display mode
+                    if event_type == "tool_use" and event.get("tool") == "AskUserQuestion":
+                        await self._handle_ask_user_question(channel_id, event)
+                        continue
+
+                    if event_type in ("tool_use", "partial"):
+                        # Track tool names for status display
+                        if event_type == "tool_use":
+                            tool_name = event.get("tool", "unknown")
+                            has_detail = bool(event.get("input") or event.get("message"))
+                            if has_detail:
+                                buffer_tool_count += 1
+                                if tool_name not in buffer_recent_tools:
+                                    buffer_recent_tools.append(tool_name)
+                                    if len(buffer_recent_tools) > 3:
+                                        buffer_recent_tools.pop(0)
+
+                        # Create status message on first activity
+                        if buffer_msg is None:
+                            status = format_buffer_status(_buffer_elapsed(), buffer_recent_tools, buffer_tool_count)
+                            buffer_msg = await self.send_message(channel_id, status)
+                            buffer_update_task = asyncio.create_task(_buffer_update_loop())
+                        continue
+
+                    if event_type == "text":
+                        content = event.get("content", "")
+                        if content:
+                            result_texts_buf.append(content)
+                        continue
+
+                    if event_type == "result":
+                        sdk_session_id = event.get("session_id")
+                        if sdk_session_id:
+                            self.router.update_sdk_session(channel_id, sdk_session_id)
+
+                    elif event_type == "system":
+                        model = event.get("model")
+                        if model and event.get("subtype") == "init":
+                            session = self.router.resolve(channel_id)
+                            daemon_sid = session.daemon_session_id if session else ""
+                            if daemon_sid not in self._init_shown:
+                                self._init_shown.add(daemon_sid)
+                                mode_str = display_mode(session.mode) if session else "unknown"
+                                name_str = f" | Session: **{session.name}**" if session and session.name else ""
+                                await self.send_message(
+                                    channel_id,
+                                    f"Connected to **{model}** | Mode: **{mode_str}**{name_str}",
+                                )
+
+                    elif event_type == "queued":
+                        position = event.get("position", "?")
+                        await self.send_message(
+                            channel_id,
+                            f"Message queued (position: {position}). Claude is busy with a previous request.",
+                        )
+                        return
+
+                    elif event_type == "error":
+                        error_msg = event.get("message", "Unknown error")
+                        await self.send_message(channel_id, format_error(error_msg))
+
+                # Stream finished — stop update loop, finalize status, send results
+                buffer_done = True
+                if buffer_update_task is not None:
+                    buffer_update_task.cancel()
+                    try:
+                        await buffer_update_task
+                    except asyncio.CancelledError:
+                        pass
+
+                if buffer_msg is not None:
+                    try:
+                        done_status = format_buffer_status(
+                            _buffer_elapsed(), buffer_recent_tools, buffer_tool_count, done=True
+                        )
+                        await self.edit_message(buffer_msg, done_status)
+                    except Exception:
+                        pass
+
+                if result_texts_buf:
+                    full_text = "\n\n".join(result_texts_buf)
                     for chunk in split_message(full_text):
                         await self.send_message(channel_id, chunk)
                     if self.file_forward:

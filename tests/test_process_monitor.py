@@ -16,6 +16,7 @@ from head.process_monitor import (
     WEBUI_PID_FILE,
     WEBUI_PORT_FILE,
     daemon_healthy,
+    find_all_processes,
     find_process,
     pid_alive,
     read_pid_file,
@@ -171,6 +172,51 @@ class TestFindProcess:
 
         with patch("subprocess.run", return_value=FakeResult()):
             assert find_process("nonexistent") is None
+
+
+# ---------------------------------------------------------------------------
+# find_all_processes
+# ---------------------------------------------------------------------------
+
+
+class TestFindAllProcesses:
+    def test_returns_empty_list_when_no_processes(self):
+        result = find_all_processes("__nonexistent_process_xyz__")
+        assert result == []
+
+    def test_returns_list_of_pids(self):
+        class FakeResult:
+            returncode = 0
+            stdout = "1111\n2222\n3333\n"
+
+        with patch("subprocess.run", return_value=FakeResult()), patch("os.getpid", return_value=9999):
+            result = find_all_processes("some-daemon")
+            assert result == [1111, 2222, 3333]
+
+    def test_excludes_own_pid(self):
+        own_pid = os.getpid()
+
+        class FakeResult:
+            returncode = 0
+            stdout = f"{own_pid}\n8888\n7777\n"
+
+        with patch("subprocess.run", return_value=FakeResult()):
+            result = find_all_processes("some-daemon")
+            assert own_pid not in result
+            assert 8888 in result
+            assert 7777 in result
+
+    def test_returns_empty_on_pgrep_not_found(self):
+        with patch("subprocess.run", side_effect=FileNotFoundError):
+            assert find_all_processes("anything") == []
+
+    def test_returns_empty_on_no_match(self):
+        class FakeResult:
+            returncode = 1
+            stdout = ""
+
+        with patch("subprocess.run", return_value=FakeResult()):
+            assert find_all_processes("nonexistent") == []
 
 
 # ---------------------------------------------------------------------------

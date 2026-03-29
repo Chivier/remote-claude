@@ -992,7 +992,8 @@ class DiscordAdapter:
         @app_commands.describe(mode="Tool display mode")
         @app_commands.choices(
             mode=[
-                app_commands.Choice(name="timer - Working timer, results at end (default)", value="timer"),
+                app_commands.Choice(name="buffer - Thinking status + merged result (default)", value="buffer"),
+                app_commands.Choice(name="timer - Working timer, results at end", value="timer"),
                 app_commands.Choice(name="append - Show each tool call progressively", value="append"),
                 app_commands.Choice(name="batch - Show tool summary at end", value="batch"),
             ]

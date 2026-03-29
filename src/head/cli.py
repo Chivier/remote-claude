@@ -57,6 +57,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "management:\n"
             "  token       Manage auth tokens\n"
             "  update      Git pull and restart\n"
+            "  upgrade     Find old processes, confirm kill, restart\n"
             "  uninstall   Remove codecast data and daemon binary\n"
             "  completion  Generate shell completion script\n"
             "\n"
@@ -89,6 +90,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     # update ----------------------------------------------------------
     subparsers.add_parser("update", help="Git pull and restart")
+
+    # upgrade ---------------------------------------------------------
+    sub_upgrade = subparsers.add_parser("upgrade", help="Upgrade: find old processes, confirm kill, restart")
+    sub_upgrade.add_argument("--yes", "-y", action="store_true", default=False, help="Skip confirmation prompt")
 
     # status ----------------------------------------------------------
     subparsers.add_parser("status", help="Show component status")
@@ -312,6 +317,108 @@ def _cmd_update(args: argparse.Namespace) -> None:
         sys.exit(1)
     print("Restarting...")
     os.execv(sys.executable, [sys.executable, "-m", "head.cli", "start"])
+
+
+def _cmd_upgrade(args: argparse.Namespace) -> None:
+    """Find all running codecast processes, show them, confirm kill, then restart."""
+    import time
+
+    from head.daemon_installer import get_current_version, get_daemon_version
+    from head.process_monitor import find_all_processes, pid_alive, read_pid_file
+
+    pkg_version = get_current_version()
+    print(f"Installed codecast version: {pkg_version}")
+    print()
+
+    # Discover all running codecast processes
+    processes: list[dict] = []
+
+    # 1) Daemon processes
+    daemon_pids = find_all_processes("codecast-daemon")
+    for pid in daemon_pids:
+        try:
+            cmdline = Path(f"/proc/{pid}/cmdline").read_text().replace("\x00", " ").strip()
+        except Exception:
+            cmdline = "codecast-daemon"
+        processes.append({"pid": pid, "type": "daemon", "cmdline": cmdline})
+
+    # 2) Head node process
+    head_pid = _read_pid_file(_HEAD_PID_FILE)
+    if head_pid is not None and _pid_alive(head_pid):
+        processes.append({"pid": head_pid, "type": "head", "cmdline": "codecast head"})
+
+    # 3) WebUI process
+    webui_pid = _read_pid_file(_WEBUI_PID_FILE)
+    if webui_pid is not None and _pid_alive(webui_pid):
+        processes.append({"pid": webui_pid, "type": "webui", "cmdline": "codecast webui"})
+
+    if not processes:
+        print("No running codecast processes found.")
+        print("Use 'codecast start' to start the daemon.")
+        return
+
+    # Show discovered processes
+    print(f"Found {len(processes)} running codecast process(es):")
+    print()
+    print(f"  {'PID':<10} {'Type':<10} {'Command'}")
+    print(f"  {'-' * 10} {'-' * 10} {'-' * 30}")
+    for p in processes:
+        print(f"  {p['pid']:<10} {p['type']:<10} {p['cmdline'][:60]}")
+
+    # Check daemon version mismatch
+    daemon_version = get_daemon_version()
+    if daemon_version and pkg_version and daemon_version != pkg_version:
+        print(f"\nDaemon version mismatch: running {daemon_version}, installed {pkg_version}")
+    elif daemon_version:
+        print(f"\nDaemon version: {daemon_version}")
+
+    print()
+
+    # Confirm with user
+    skip_confirm = getattr(args, "yes", False)
+    if not skip_confirm:
+        try:
+            answer = input("Kill these processes and restart with the new version? [y/N] ").strip().lower()
+            if answer not in ("y", "yes"):
+                print("Aborted.")
+                return
+        except (EOFError, KeyboardInterrupt):
+            print("\nAborted.")
+            return
+
+    # Kill all discovered processes
+    print("Stopping processes...")
+    for p in processes:
+        pid = p["pid"]
+        try:
+            os.kill(pid, signal.SIGTERM)
+            print(f"  Sent SIGTERM to {p['type']} (pid={pid})")
+        except ProcessLookupError:
+            print(f"  {p['type']} (pid={pid}) already gone")
+
+    # Wait for processes to die (up to 5s)
+    for _ in range(50):
+        if not any(pid_alive(p["pid"]) for p in processes):
+            break
+        time.sleep(0.1)
+    else:
+        # Force kill remaining
+        for p in processes:
+            if pid_alive(p["pid"]):
+                try:
+                    os.kill(p["pid"], signal.SIGKILL)
+                    print(f"  Force-killed {p['type']} (pid={p['pid']})")
+                except ProcessLookupError:
+                    pass
+        time.sleep(0.1)
+
+    # Clean up PID/port files
+    _DAEMON_PID_FILE.unlink(missing_ok=True)
+    _PORT_FILE.unlink(missing_ok=True)
+
+    print("\nAll processes stopped.")
+    print("Starting daemon with new version...")
+    _cmd_start(args)
 
 
 def _cmd_status(args: argparse.Namespace) -> None:
@@ -661,7 +768,7 @@ _codecast() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="start stop restart status peers sessions token head webui update uninstall completion"
+    commands="start stop restart status peers sessions token head webui update upgrade uninstall completion"
 
     case "$prev" in
         codecast)
@@ -686,6 +793,10 @@ _codecast() {
             ;;
         uninstall)
             COMPREPLY=( $(compgen -W "--keep-config --yes" -- "$cur") )
+            return 0
+            ;;
+        upgrade)
+            COMPREPLY=( $(compgen -W "--yes" -- "$cur") )
             return 0
             ;;
     esac
@@ -715,6 +826,7 @@ _codecast() {
         'head:Start the head node'
         'webui:Start/stop the web UI'
         'update:Git pull and restart'
+        'upgrade:Upgrade: find old processes, confirm kill, restart'
         'uninstall:Remove codecast data and daemon binary'
         'completion:Generate shell completion script'
     )
@@ -747,6 +859,9 @@ _codecast() {
                 uninstall)
                     _arguments '--keep-config[Keep config files]' '--yes[Skip confirmation]'
                     ;;
+                upgrade)
+                    _arguments '--yes[Skip confirmation]'
+                    ;;
             esac
             ;;
     esac
@@ -759,7 +874,7 @@ def _completion_fish() -> str:
     return '''\
 # codecast completions for fish
 
-set -l commands start stop restart status peers sessions token head webui update uninstall completion
+set -l commands start stop restart status peers sessions token head webui update upgrade uninstall completion
 
 complete -c codecast -f
 complete -c codecast -n "not __fish_seen_subcommand_from $commands" -l version -d "Show version"
@@ -776,6 +891,7 @@ complete -c codecast -n "not __fish_seen_subcommand_from $commands" -a token -d 
 complete -c codecast -n "not __fish_seen_subcommand_from $commands" -a head -d "Start the head node"
 complete -c codecast -n "not __fish_seen_subcommand_from $commands" -a webui -d "Start/stop the web UI"
 complete -c codecast -n "not __fish_seen_subcommand_from $commands" -a update -d "Git pull and restart"
+complete -c codecast -n "not __fish_seen_subcommand_from $commands" -a upgrade -d "Upgrade: find old processes, confirm kill, restart"
 complete -c codecast -n "not __fish_seen_subcommand_from $commands" -a uninstall -d "Remove codecast data"
 complete -c codecast -n "not __fish_seen_subcommand_from $commands" -a completion -d "Generate completion script"
 
@@ -784,7 +900,8 @@ complete -c codecast -n "__fish_seen_subcommand_from webui" -a "start stop statu
 complete -c codecast -n "__fish_seen_subcommand_from head" -a "start stop"
 complete -c codecast -n "__fish_seen_subcommand_from completion" -a "bash zsh fish"
 complete -c codecast -n "__fish_seen_subcommand_from uninstall" -l keep-config -d "Keep config files"
-complete -c codecast -n "__fish_seen_subcommand_from uninstall" -s y -l yes -d "Skip confirmation"'''
+complete -c codecast -n "__fish_seen_subcommand_from uninstall" -s y -l yes -d "Skip confirmation"
+complete -c codecast -n "__fish_seen_subcommand_from upgrade" -s y -l yes -d "Skip confirmation"'''
 
 
 def _cmd_webui(args: argparse.Namespace) -> None:
@@ -904,6 +1021,7 @@ _COMMANDS: dict[str, callable] = {
     "stop": _cmd_stop,
     "restart": _cmd_restart,
     "update": _cmd_update,
+    "upgrade": _cmd_upgrade,
     "status": _cmd_status,
     "peers": _cmd_peers,
     "sessions": _cmd_sessions,

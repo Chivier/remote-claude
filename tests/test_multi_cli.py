@@ -45,7 +45,7 @@ def legacy_router(tmp_path):
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             name TEXT,
-            tool_display TEXT NOT NULL DEFAULT 'timer'
+            tool_display TEXT NOT NULL DEFAULT 'buffer'
         );
         CREATE TABLE session_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

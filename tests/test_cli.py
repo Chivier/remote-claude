@@ -219,6 +219,19 @@ class TestCLIParsing:
         with pytest.raises(SystemExit):
             parse_args(["completion", "powershell"])
 
+    def test_upgrade_command(self):
+        from head.cli import parse_args
+
+        args = parse_args(["upgrade"])
+        assert args.command == "upgrade"
+
+    def test_upgrade_with_yes(self):
+        from head.cli import parse_args
+
+        args = parse_args(["upgrade", "--yes"])
+        assert args.command == "upgrade"
+        assert args.yes is True
+
 
 class TestPortHelper:
     def test_port_available_on_free_port(self):
