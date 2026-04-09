@@ -13,6 +13,7 @@ from head.platform.protocol import MessageHandle, FileAttachment, InputHandler
 from head.config import Config, PeerConfig
 from head.session_router import SessionRouter, Session
 from head.daemon_client import DaemonClient, DaemonError, DaemonConnectionError
+from head.ssh_manager import TunnelResult
 
 
 # ─── MockAdapter: implements PlatformAdapter protocol for testing ───
@@ -113,7 +114,7 @@ class MockBotEngine(BotEngine):
 @pytest.fixture
 def mock_ssh():
     ssh = AsyncMock()
-    ssh.ensure_tunnel = AsyncMock(return_value=19100)
+    ssh.ensure_tunnel = AsyncMock(return_value=TunnelResult(local_port=19100))
     ssh.get_local_port = MagicMock(return_value=None)
     ssh.sync_skills = AsyncMock()
     ssh.ensure_dir = AsyncMock()

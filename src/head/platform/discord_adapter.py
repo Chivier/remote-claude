@@ -688,7 +688,7 @@ class DiscordAdapter:
         try:
             from head.daemon_client import DaemonConnectionError
 
-            local_port = await engine.ssh.ensure_tunnel(session.machine_id)
+            local_port = (await engine.ssh.ensure_tunnel(session.machine_id)).local_port
 
             # Upload files and replace markers before sending to Claude
             if file_refs:

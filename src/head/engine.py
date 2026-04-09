@@ -357,7 +357,13 @@ class BotEngine:
                 await self.send_message(channel_id, f"\u26a1 Starting session on **{machine_id}**:`{path}`...")
 
         # Ensure SSH tunnel
-        local_port = await self.ssh.ensure_tunnel(machine_id)
+        tunnel = await self.ssh.ensure_tunnel(machine_id)
+        local_port = tunnel.local_port
+        if tunnel.daemon_upgraded:
+            await self.send_message(
+                channel_id,
+                f"Daemon on **{machine_id}** upgraded: {tunnel.old_version} → {tunnel.new_version}",
+            )
 
         # Ensure project directory exists and clone if needed
         if git_url:
@@ -385,7 +391,7 @@ class BotEngine:
                 if machine_id in self.ssh.tunnels:
                     await self.ssh.tunnels[machine_id].close()
                     del self.ssh.tunnels[machine_id]
-                local_port = await self.ssh.ensure_tunnel(machine_id)
+                local_port = (await self.ssh.ensure_tunnel(machine_id)).local_port
                 daemon_session_id = await self.daemon.create_session(
                     local_port, path, self.config.default_mode, cli_type=cli_type
                 )
@@ -442,7 +448,13 @@ class BotEngine:
         )
 
         # Ensure tunnel
-        local_port = await self.ssh.ensure_tunnel(session.machine_id)
+        tunnel = await self.ssh.ensure_tunnel(session.machine_id)
+        local_port = tunnel.local_port
+        if tunnel.daemon_upgraded:
+            await self.send_message(
+                channel_id,
+                f"Daemon on **{session.machine_id}** upgraded: {tunnel.old_version} → {tunnel.new_version}",
+            )
 
         # Resume on daemon
         result = await self.daemon.resume_session(local_port, session_id, session.sdk_session_id)
@@ -519,7 +531,7 @@ class BotEngine:
         for session in sessions:
             if session.status in ("active", "detached"):
                 try:
-                    local_port = await self.ssh.ensure_tunnel(machine_id)
+                    local_port = (await self.ssh.ensure_tunnel(machine_id)).local_port
                     await self.daemon.destroy_session(local_port, session.daemon_session_id)
                 except Exception as e:
                     logger.warning(f"Failed to destroy daemon session: {e}")
@@ -547,7 +559,7 @@ class BotEngine:
 
         if session.status in ("active", "detached"):
             try:
-                local_port = await self.ssh.ensure_tunnel(session.machine_id)
+                local_port = (await self.ssh.ensure_tunnel(session.machine_id)).local_port
                 await self.daemon.destroy_session(local_port, session.daemon_session_id)
             except Exception as e:
                 logger.warning(f"Failed to destroy daemon session {name_hint}: {e}")
@@ -587,7 +599,7 @@ class BotEngine:
             await self.send_message(channel_id, "\u26a0\ufe0f No active session. Use `/start` first.")
             return
 
-        local_port = await self.ssh.ensure_tunnel(session.machine_id)
+        local_port = (await self.ssh.ensure_tunnel(session.machine_id)).local_port
         ok = await self.daemon.set_mode(local_port, session.daemon_session_id, mode)
 
         if ok:
@@ -617,7 +629,7 @@ class BotEngine:
             await self.send_message(channel_id, "\u26a0\ufe0f No active session. Use `/start` first.")
             return
 
-        local_port = await self.ssh.ensure_tunnel(session.machine_id)
+        local_port = (await self.ssh.ensure_tunnel(session.machine_id)).local_port
         ok = await self.daemon.set_model(local_port, session.daemon_session_id, model)
 
         if ok:
@@ -663,7 +675,7 @@ class BotEngine:
 
         queue_stats = None
         try:
-            local_port = await self.ssh.ensure_tunnel(session.machine_id)
+            local_port = (await self.ssh.ensure_tunnel(session.machine_id)).local_port
             queue_stats = await self.daemon.get_queue_stats(local_port, session.daemon_session_id)
         except Exception:
             pass
@@ -682,7 +694,7 @@ class BotEngine:
             return
 
         try:
-            local_port = await self.ssh.ensure_tunnel(session.machine_id)
+            local_port = (await self.ssh.ensure_tunnel(session.machine_id)).local_port
             result = await self.daemon.interrupt_session(local_port, session.daemon_session_id)
 
             if result.get("interrupted"):
@@ -710,7 +722,7 @@ class BotEngine:
 
         # Destroy old session
         try:
-            local_port = await self.ssh.ensure_tunnel(machine_id)
+            local_port = (await self.ssh.ensure_tunnel(machine_id)).local_port
             await self.daemon.destroy_session(local_port, session.daemon_session_id)
         except Exception as e:
             logger.warning(f"Failed to destroy session during /clear: {e}")
@@ -737,7 +749,7 @@ class BotEngine:
 
         # Destroy old session
         try:
-            local_port = await self.ssh.ensure_tunnel(machine_id)
+            local_port = (await self.ssh.ensure_tunnel(machine_id)).local_port
             await self.daemon.destroy_session(local_port, session.daemon_session_id)
         except Exception as e:
             logger.warning(f"Failed to destroy session during /new: {e}")
@@ -816,7 +828,7 @@ class BotEngine:
             return
 
         try:
-            local_port = await self.ssh.ensure_tunnel(machine_id)
+            local_port = (await self.ssh.ensure_tunnel(machine_id)).local_port
             health = await self.daemon.health_check(local_port)
             await self.send_message(channel_id, format_health(machine_id, health))
         except Exception as e:
@@ -855,7 +867,7 @@ class BotEngine:
             return
 
         try:
-            local_port = await self.ssh.ensure_tunnel(machine_id)
+            local_port = (await self.ssh.ensure_tunnel(machine_id)).local_port
             monitor = await self.daemon.monitor_sessions(local_port)
             await self.send_message(channel_id, format_monitor(machine_id, monitor))
         except Exception as e:
@@ -1541,7 +1553,7 @@ After `/start` or `/resume`, send any message to interact with Claude."""
             self.file_forward.reset(channel_id)
 
         try:
-            local_port = await self.ssh.ensure_tunnel(session.machine_id)
+            local_port = (await self.ssh.ensure_tunnel(session.machine_id)).local_port
 
             # Upload files and replace markers before sending to Claude
             if file_refs:
