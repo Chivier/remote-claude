@@ -370,7 +370,9 @@ class SSHManager:
                 upgrade_info.new_version = __version__
                 # Fall through to kill + redeploy
             else:
-                logger.info(f"Daemon already healthy on {machine_id} (port {port}, version {daemon_version or 'unknown'})")
+                logger.info(
+                    f"Daemon already healthy on {machine_id} (port {port}, version {daemon_version or 'unknown'})"
+                )
                 return upgrade_info
 
         # Daemon not responding or version mismatch — check for stale processes
