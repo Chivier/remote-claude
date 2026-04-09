@@ -3,7 +3,21 @@
 import json
 import pytest
 
-from head.ssh_manager import _parse_health_response
+from head.ssh_manager import TunnelResult, _parse_health_response
+
+
+class TestTunnelResult:
+    def test_default_no_upgrade(self):
+        r = TunnelResult(local_port=19100)
+        assert r.daemon_upgraded is False
+        assert r.old_version is None
+        assert r.new_version is None
+
+    def test_upgrade_fields(self):
+        r = TunnelResult(local_port=19100, daemon_upgraded=True, old_version="0.2.21", new_version="0.2.22")
+        assert r.daemon_upgraded is True
+        assert r.old_version == "0.2.21"
+        assert r.new_version == "0.2.22"
 
 
 class TestCheckDaemonHealthVersion:

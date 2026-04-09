@@ -17,11 +17,13 @@ import platform
 import shutil
 import socket
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import asyncssh
 
+from .__version__ import __version__
 from .config import Config, PeerConfig
 from .peer_manager import _build_daemon_static
 
@@ -39,6 +41,16 @@ def _parse_health_response(raw: str) -> tuple[bool, str | None]:
     ok = data.get("ok", False)
     version = data.get("version") if ok else None
     return bool(ok), version
+
+
+@dataclass
+class TunnelResult:
+    """Result of ensure_tunnel, including daemon upgrade info."""
+
+    local_port: int
+    daemon_upgraded: bool = False
+    old_version: str | None = None
+    new_version: str | None = None
 
 
 class SSHTunnel:
@@ -266,20 +278,17 @@ class SSHManager:
         conn = await asyncio.wait_for(asyncssh.connect(**connect_kwargs), timeout=timeout)
         return conn
 
-    async def ensure_tunnel(self, machine_id: str) -> int:
+    async def ensure_tunnel(self, machine_id: str) -> TunnelResult:
         """
         Ensure an SSH tunnel exists to the remote machine's daemon port.
-        Returns the local port number for accessing the daemon.
-
-        For localhost machines, no SSH tunnel is created; the daemon port
-        is returned directly.
+        Returns TunnelResult with the local port and optional upgrade info.
         """
         # Check existing tunnel
         if machine_id in self.tunnels:
             tunnel = self.tunnels[machine_id]
             if tunnel.alive:
                 logger.debug(f"Tunnel to {machine_id} already active on port {tunnel.local_port}")
-                return tunnel.local_port
+                return TunnelResult(local_port=tunnel.local_port)
             else:
                 logger.info(f"Tunnel to {machine_id} is dead, recreating...")
                 await tunnel.close()
@@ -302,25 +311,27 @@ class SSHManager:
                 is_localhost=True,
             )
             self.tunnels[machine_id] = tunnel
-            return actual_port
+            return TunnelResult(local_port=actual_port)
 
         local_port = self._alloc_port()
 
         # Establish SSH connection
         conn = await self._connect_ssh(machine)
 
-        # Ensure daemon is running on remote (may pick a different port)
-        await self._ensure_daemon(machine_id, conn)
+        # Ensure daemon is running on remote (may upgrade if version mismatch)
+        upgrade_info = await self._ensure_daemon(machine_id, conn)
 
         # Read the actual daemon port — verify it belongs to us
         find_result = await self._find_own_daemon_port(conn, machine.daemon_port)
-        actual_remote_port = find_result[0] if find_result else await self._read_daemon_port_remote(conn, machine.daemon_port)
+        if find_result:
+            actual_remote_port = find_result[0]
+        else:
+            actual_remote_port = await self._read_daemon_port_remote(conn, machine.daemon_port)
         if actual_remote_port != machine.daemon_port:
             logger.info(f"Daemon on {machine_id} using port {actual_remote_port} (configured: {machine.daemon_port})")
 
         logger.info(f"Creating SSH tunnel: localhost:{local_port} -> {machine_id}:localhost:{actual_remote_port}")
 
-        # Create local port forwarding to actual daemon port
         listener = await conn.forward_local_port(
             "127.0.0.1",
             local_port,
@@ -332,31 +343,46 @@ class SSHManager:
         self.tunnels[machine_id] = tunnel
 
         logger.info(f"Tunnel to {machine_id} ready on port {local_port}")
-        return local_port
 
-    async def _ensure_daemon(self, machine_id: str, conn: asyncssh.SSHClientConnection) -> None:
-        """Ensure the daemon process is running on the remote machine."""
+        upgrade_info.local_port = local_port
+        return upgrade_info
+
+    async def _ensure_daemon(self, machine_id: str, conn: asyncssh.SSHClientConnection) -> TunnelResult:
+        """Ensure the daemon process is running on the remote machine.
+
+        Returns TunnelResult with upgrade info (local_port filled in by caller).
+        """
         machine = self._get_machine(machine_id)
         install_dir = self.config.daemon.install_dir
+        upgrade_info = TunnelResult(local_port=0)  # port filled by caller
 
         # Find this user's daemon — checks port file, then scans range, verifies ownership
-        find_result = await self._find_own_daemon_port(conn, machine.daemon_port)
-        if find_result:
-            logger.info(f"Daemon already healthy on {machine_id} (port {find_result[0]}, owned by us)")
-            return
+        result = await self._find_own_daemon_port(conn, machine.daemon_port)
+        if result:
+            port, daemon_version = result
+            if daemon_version and daemon_version != __version__:
+                logger.warning(
+                    f"Daemon version mismatch on {machine_id}: "
+                    f"daemon={daemon_version}, head={__version__}. Upgrading..."
+                )
+                upgrade_info.daemon_upgraded = True
+                upgrade_info.old_version = daemon_version
+                upgrade_info.new_version = __version__
+                # Fall through to kill + redeploy
+            else:
+                logger.info(f"Daemon already healthy on {machine_id} (port {port}, version {daemon_version or 'unknown'})")
+                return upgrade_info
 
-        # Daemon not responding — check for stale processes owned by THIS user only
-        result = await conn.run("pgrep -u $(whoami) -f 'codecast-daemon' || true")
-        stdout = result.stdout.strip() if result.stdout else ""
+        # Daemon not responding or version mismatch — check for stale processes
+        result_ps = await conn.run("pgrep -u $(whoami) -f 'codecast-daemon' || true")
+        stdout = result_ps.stdout.strip() if result_ps.stdout else ""
 
         if stdout:
-            # Only kill our own stale daemon — never touch other users' processes
             pids = stdout.splitlines()[0]
-            logger.warning(f"Own daemon on {machine_id} (PID: {pids}) is unresponsive, sending SIGTERM...")
+            logger.warning(f"Own daemon on {machine_id} (PID: {pids}) is unresponsive or outdated, sending SIGTERM...")
             await conn.run(f"kill {pids} 2>/dev/null || true")
             await asyncio.sleep(2)
 
-            # Check if it's gone
             recheck = await conn.run(f"kill -0 {pids} 2>/dev/null && echo 'alive' || echo 'dead'")
             if "alive" in (recheck.stdout or ""):
                 logger.warning(f"Own daemon on {machine_id} (PID: {pids}) didn't stop, sending SIGKILL...")
@@ -374,12 +400,11 @@ class SSHManager:
         )
         check_out = check_result.stdout.strip() if check_result.stdout else ""
 
-        if check_out == "on-path":
-            # Daemon installed via pip on remote — resolve its path
+        if check_out == "on-path" and not upgrade_info.daemon_upgraded:
             path_result = await conn.run("command -v codecast-daemon")
             binary_path = (path_result.stdout or "").strip()
             logger.info(f"Using pip-installed daemon on {machine_id}: {binary_path}")
-        elif check_out == "missing":
+        elif check_out == "missing" or upgrade_info.daemon_upgraded:
             if self.config.daemon.auto_deploy:
                 await self._deploy_daemon(machine_id, conn)
             else:
@@ -390,16 +415,12 @@ class SSHManager:
 
         log_file = self.config.daemon.log_file
 
-        # Build PATH that includes ~/.local/bin (for claude CLI)
         extra_paths = [f"/home/{machine.user}/.local/bin"]
         path_value = ":".join(extra_paths) + ":$PATH"
 
-        # Start daemon with enriched PATH
         start_cmd = f"DAEMON_PORT={machine.daemon_port} PATH={path_value} nohup {binary_path} > {log_file} 2>&1 &"
         await conn.run(start_cmd)
 
-        # Wait for daemon to be ready (poll health endpoint)
-        # Read actual port from port file since daemon may have picked a different one
         for attempt in range(15):
             await asyncio.sleep(2)
             check_port = await self._read_daemon_port_remote(conn, machine.daemon_port)
@@ -409,9 +430,10 @@ class SSHManager:
                 f"-H 'Content-Type: application/json' 2>/dev/null || true"
             )
             health_out = health_result.stdout.strip() if health_result.stdout else ""
-            if '"ok":true' in health_out or '"ok": true' in health_out:
+            ok, _ = _parse_health_response(health_out)
+            if ok:
                 logger.info(f"Daemon started on {machine_id} (port {check_port})")
-                return
+                return upgrade_info
 
         raise RuntimeError(f"Daemon failed to start on {machine_id} after 30s")
 
