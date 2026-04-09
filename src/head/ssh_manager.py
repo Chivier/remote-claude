@@ -128,58 +128,61 @@ class SSHManager:
             logger.debug(f"Could not read remote daemon.port: {e}")
         return default
 
-    async def _find_own_daemon_port(self, conn: asyncssh.SSHClientConnection, base_port: int) -> Optional[int]:
+    async def _find_own_daemon_port(
+        self, conn: asyncssh.SSHClientConnection, base_port: int
+    ) -> Optional[tuple[int, str | None]]:
         """Find this user's daemon by scanning the port range.
 
-        The Rust daemon auto-increments from base_port up to base_port+100
-        when the configured port is taken. Each user's daemon writes its
-        actual port to ~/.codecast/daemon.port, but if that file is missing
-        or stale we scan the range and verify ownership via PID.
+        Returns (port, version) if found, or None.
         """
         # 1. Try the port file first (fast path)
         file_port = await self._read_daemon_port_remote(conn, 0)
         if file_port:
-            health = await self._check_daemon_health(conn, file_port)
-            if health:
-                # Verify the daemon on this port belongs to us
+            health_out = await self._health_check_raw(conn, file_port)
+            ok, version = _parse_health_response(health_out)
+            if ok:
                 if await self._daemon_owned_by_me(conn, file_port):
-                    return file_port
+                    return file_port, version
                 else:
                     logger.debug(f"Daemon on port {file_port} belongs to another user")
 
         # 2. Scan the range base_port .. base_port+100
-        # Use a batch command to check multiple ports in one SSH round-trip
         scan_cmd = " ; ".join(
             f"curl -sf http://127.0.0.1:{p}/rpc "
             f'-d \'{{"method":"health.check"}}\' '
             f"-H 'Content-Type: application/json' --max-time 1 "
             f"2>/dev/null && echo ' PORT={p}'"
-            for p in range(base_port, base_port + 20)  # scan first 20 for speed
+            for p in range(base_port, base_port + 20)
         )
         result = await conn.run(f"{{ {scan_cmd} ; }} 2>/dev/null || true")
         stdout = result.stdout or ""
 
         for line in stdout.splitlines():
             if '"ok":true' in line or '"ok": true' in line:
-                # Extract port from the marker
                 if "PORT=" in line:
                     try:
                         port = int(line.split("PORT=")[-1].strip())
                         if await self._daemon_owned_by_me(conn, port):
-                            return port
+                            _, version = _parse_health_response(line)
+                            return port, version
                     except ValueError:
                         continue
         return None
 
-    async def _check_daemon_health(self, conn: asyncssh.SSHClientConnection, port: int) -> bool:
-        """Quick health check on a specific port."""
+    async def _health_check_raw(self, conn: asyncssh.SSHClientConnection, port: int) -> str:
+        """Run health.check RPC on a remote port, return raw stdout."""
         result = await conn.run(
             f"curl -sf http://127.0.0.1:{port}/rpc "
             f'-d \'{{"method":"health.check"}}\' '
             f"-H 'Content-Type: application/json' --max-time 2 2>/dev/null || true"
         )
-        out = (result.stdout or "").strip()
-        return '"ok":true' in out or '"ok": true' in out
+        return (result.stdout or "").strip()
+
+    async def _check_daemon_health(self, conn: asyncssh.SSHClientConnection, port: int) -> bool:
+        """Quick health check on a specific port."""
+        out = await self._health_check_raw(conn, port)
+        ok, _ = _parse_health_response(out)
+        return ok
 
     async def _daemon_owned_by_me(self, conn: asyncssh.SSHClientConnection, port: int) -> bool:
         """Check if the daemon listening on `port` is owned by the current SSH user."""
@@ -310,8 +313,8 @@ class SSHManager:
         await self._ensure_daemon(machine_id, conn)
 
         # Read the actual daemon port — verify it belongs to us
-        own_port = await self._find_own_daemon_port(conn, machine.daemon_port)
-        actual_remote_port = own_port or await self._read_daemon_port_remote(conn, machine.daemon_port)
+        find_result = await self._find_own_daemon_port(conn, machine.daemon_port)
+        actual_remote_port = find_result[0] if find_result else await self._read_daemon_port_remote(conn, machine.daemon_port)
         if actual_remote_port != machine.daemon_port:
             logger.info(f"Daemon on {machine_id} using port {actual_remote_port} (configured: {machine.daemon_port})")
 
@@ -337,9 +340,9 @@ class SSHManager:
         install_dir = self.config.daemon.install_dir
 
         # Find this user's daemon — checks port file, then scans range, verifies ownership
-        own_port = await self._find_own_daemon_port(conn, machine.daemon_port)
-        if own_port:
-            logger.info(f"Daemon already healthy on {machine_id} (port {own_port}, owned by us)")
+        find_result = await self._find_own_daemon_port(conn, machine.daemon_port)
+        if find_result:
+            logger.info(f"Daemon already healthy on {machine_id} (port {find_result[0]}, owned by us)")
             return
 
         # Daemon not responding — check for stale processes owned by THIS user only
