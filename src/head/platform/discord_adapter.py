@@ -485,7 +485,7 @@ class DiscordAdapter:
 
             # Check allowed channels
             if self._discord_config and self._discord_config.allowed_channels:
-                if message.channel.id not in self._discord_config.allowed_channels:
+                if self._effective_channel_id(message.channel) not in self._discord_config.allowed_channels:
                     return
 
             channel_id = f"discord:{message.channel.id}"
@@ -632,8 +632,8 @@ class DiscordAdapter:
                     continue
 
                 try:
-                    await existing.edit(content=heartbeat_text)
-                except discord.HTTPException as e:
+                    await self.edit_message(existing, heartbeat_text)
+                except Exception as e:
                     logger.debug(f"Heartbeat message error: {e}")
 
         except asyncio.CancelledError:
@@ -783,11 +783,22 @@ class DiscordAdapter:
             heartbeat_task.cancel()
             try:
                 await heartbeat_task
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, Exception):
                 pass
             self._heartbeat_msgs.pop(channel_id, None)
             await self._stop_typing(channel_id)
             self._streaming.discard(channel_id)
+
+    @staticmethod
+    def _effective_channel_id(channel) -> int:
+        """Return the channel ID to check against allowed_channels.
+
+        For threads (including forum posts), return the parent channel ID
+        so that threads inherit the parent's allowed status.
+        """
+        if isinstance(channel, discord.Thread):
+            return channel.parent_id
+        return channel.id
 
     # -----------------------------------------------------------------------
     # Internal: slash command setup (all 17 commands + autocomplete)
@@ -802,7 +813,7 @@ class DiscordAdapter:
 
         async def _channel_check(interaction: discord.Interaction) -> bool:
             if self._discord_config and self._discord_config.allowed_channels:
-                if interaction.channel_id not in self._discord_config.allowed_channels:
+                if self._effective_channel_id(interaction.channel) not in self._discord_config.allowed_channels:
                     await interaction.response.send_message(
                         "This channel is not configured for Codecast.", ephemeral=True
                     )
