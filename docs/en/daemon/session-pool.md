@@ -19,11 +19,11 @@ Rather than keeping a long-running CLI process with stdin open, the SessionPool 
 
 ```
 # First message (no session ID yet):
-claude --print "user message" --output-format stream-json --verbose \
+claude -p "user message" --output-format stream-json --verbose \
        [--dangerously-skip-permissions]
 
 # Subsequent messages (using --resume to continue conversation):
-claude --print "user message" --output-format stream-json --verbose \
+claude -p "user message" --output-format stream-json --verbose \
        --resume <sdkSessionId> \
        [--dangerously-skip-permissions]
 ```
@@ -99,13 +99,13 @@ let command = if let Some(sdk_id) = &session.sdk_session_id {
 ```rust
 let mut child = command
     .current_dir(&session.path)
-    .stdin(Stdio::null())       // --print mode: stdin not needed
+    .stdin(Stdio::null())
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
     .spawn()?;
 ```
 
-Stdin is set to null because `--print` mode reads the prompt from CLI arguments.
+Stdin is set to null because the prompt is passed via CLI arguments in non-interactive mode.
 
 **Output processing:**
 

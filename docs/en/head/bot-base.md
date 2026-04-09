@@ -187,7 +187,7 @@ For `batch` mode:
 - `text`: Complete text block. Edit the streaming message to its final form, or send as new message(s) if no streaming message exists. Split at platform limits if needed.
 - `tool_use` with `tool == "AskUserQuestion"`: Parse the question input using `format_ask_user_question()`, then call `adapter.send_question()` for each question to display platform-native interactive buttons/keyboard.
 - `tool_use` (other tools): Route to the active tool display mode handler.
-- `result`: Capture the SDK session ID and update the router with `router.update_sdk_session_id()`.
+- `result`: Capture the SDK session ID and update the router with `router.update_sdk_session()`.
 - `system` (subtype `init`): On the first `system` event for a session, display the connected model and current mode.
 - `queued`: Notify the user that their message is queued, with its position number.
 - `error`: Display the error message.

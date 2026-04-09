@@ -18,11 +18,6 @@
 
 ---
 
-> [!WARNING]
-> Temporary notice: please do not use Codecast for now.
-> 
-> Codecast currently invokes Claude in print mode (`claude --print`). Due to the ongoing billing issue tracked in [anthropics/claude-code#43333](https://github.com/anthropics/claude-code/issues/43333), this may cause unexpected API charges for some Claude users. Until this is clarified or fixed upstream, Codecast usage is temporarily discouraged.
-
 Send a message from Discord, Telegram, or Lark. It reaches an AI coding agent on your GPU server, cloud VM, or any SSH-accessible machine — and streams the response back in real time.
 
 ## How is this different from the official Claude Discord bot?

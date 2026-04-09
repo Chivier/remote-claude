@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Mock Claude CLI - simulates claude --print behavior
+# Mock Claude CLI - simulates Claude non-interactive prompt behavior
 # Outputs stream-json format that the daemon expects.
 #
 # Behavior:
-#   - Receives message via --print <msg> argument
+#   - Receives message via `-p <msg>` (also accepts `--print <msg>` for compatibility)
 #   - Echoes the message back wrapped in proper stream-json events
 #   - Supports --output-format stream-json, --resume, --verbose flags
 #   - Special messages trigger specific behaviors:
@@ -24,7 +24,7 @@ VERBOSE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --print)
+        -p|--print)
             MESSAGE="$2"
             shift 2
             ;;

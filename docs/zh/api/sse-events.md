@@ -172,7 +172,7 @@ Head Node 将此传递给 `format_ask_user_question()`，然后调用 `adapter.s
 | `session_id` | string | 供下次消息 `--resume` 使用的 SDK 会话 ID |
 | `raw` | object | 原始结果，包含 `duration_ms` 和 `usage`（可选） |
 
-Head Node 捕获 `session_id` 并通过 `router.update_sdk_session_id()` 保存，供后续 `--resume` 调用使用。
+Head Node 捕获 `session_id` 并通过 `router.update_sdk_session()` 保存，供后续 `--resume` 调用使用。
 
 这是一个**终端事件**。
 

@@ -99,8 +99,8 @@ class TestHealthCheck:
         assert mem["rss"] > 0
 
     @pytest.mark.asyncio
-    async def test_health_check_has_node_version(self):
-        """Rust daemon reports version info instead of nodeVersion."""
+    async def test_health_check_has_version(self):
+        """Rust daemon reports daemon version metadata."""
         result = await rpc_call("health.check")
         # The Rust daemon may use different field names
         assert result["ok"] is True
@@ -629,7 +629,7 @@ class TestMessageFormatterIntegration:
             "sessions": 2,
             "uptime": 3600,
             "memory": {"rss": 50, "heapUsed": 30, "heapTotal": 64},
-            "nodeVersion": "v22.0.0",
+            "version": "0.2.22",
             "pid": 1234,
         }
         formatted = format_health("test-machine", health)

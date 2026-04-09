@@ -36,7 +36,7 @@ struct InternalSession {
 
 /// SessionPool manages Claude CLI sessions using per-message spawn.
 ///
-/// Each call to send() spawns a fresh `claude --print <msg> --output-format stream-json`
+/// Each call to send() spawns a fresh `claude -p <msg> --output-format stream-json`
 /// process. Session continuity is maintained via `--resume <sdkSessionId>`.
 pub struct SessionPool {
     sessions: Arc<Mutex<HashMap<String, InternalSession>>>,

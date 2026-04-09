@@ -89,7 +89,7 @@ claude auth login
 Verify the CLI works:
 
 ```bash
-claude --print "Hello" --output-format stream-json
+claude -p "Hello" --output-format stream-json
 ```
 
 ## Configuration

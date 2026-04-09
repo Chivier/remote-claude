@@ -6,7 +6,7 @@ echo "=== Codecast Integration Test Runner ==="
 # ── 1. Verify mock Claude CLI works ──
 echo ""
 echo "--- Verifying mock Claude CLI ---"
-OUTPUT=$(claude --print "echo:hello world" --output-format stream-json --verbose 2>&1)
+OUTPUT=$(claude -p "echo:hello world" --output-format stream-json --verbose 2>&1)
 if echo "$OUTPUT" | grep -q '"type":"result"'; then
     echo "  [OK] Mock Claude CLI produces valid stream-json"
 else

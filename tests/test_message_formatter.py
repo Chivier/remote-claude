@@ -490,7 +490,7 @@ class TestFormatHealth:
             "sessions": 3,
             "sessionsByStatus": {"idle": 2, "busy": 1},
             "memory": {"rss": 128, "heapUsed": 64, "heapTotal": 128},
-            "nodeVersion": "v18.17.0",
+            "version": "0.2.22",
             "pid": 12345,
         }
         result = format_health("gpu-1", health)
@@ -502,7 +502,7 @@ class TestFormatHealth:
         assert "busy: 1" in result
         assert "128MB RSS" in result
         assert "64/128MB heap" in result
-        assert "v18.17.0" in result
+        assert "0.2.22" in result
         assert "12345" in result
 
     def test_uptime_hours(self):

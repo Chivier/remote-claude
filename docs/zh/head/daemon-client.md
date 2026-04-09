@@ -84,7 +84,7 @@ class DaemonClient:
 
 #### `health_check(local_port) -> dict`
 
-检查守护进程健康状态。返回会话数量、运行时间、内存使用情况、Node.js 版本和 PID。
+检查守护进程健康状态。返回会话数量、运行时间、内存使用情况、守护进程版本和 PID。
 
 #### `monitor_sessions(local_port) -> dict`
 

@@ -28,7 +28,7 @@ impl CliAdapter for ClaudeAdapter {
     ) -> Command {
         let mut cmd = Command::new("claude");
         cmd.args([
-            "--print",
+            "-p",
             message,
             "--output-format",
             "stream-json",
@@ -440,7 +440,7 @@ mod tests {
             .get_args()
             .map(|a| a.to_str().unwrap())
             .collect();
-        assert!(args.contains(&"--print"));
+        assert!(args.contains(&"-p"));
         assert!(args.contains(&"hello"));
         assert!(args.contains(&"--output-format"));
         assert!(args.contains(&"stream-json"));

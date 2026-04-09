@@ -143,7 +143,7 @@ data: [DONE]
 完整的事件类型文档请参阅 [SSE 流事件](./sse-events.md)。
 
 **副作用：**
-- 在消息处理期间生成 `claude --print` 进程
+- 在消息处理期间生成一个 CLI 子进程
 - 从结果中捕获 SDK 会话 ID，供后续 `--resume` 使用
 - 完成后自动处理下一条排队消息（如果有）
 
@@ -446,7 +446,7 @@ data: [DONE]
             "heapUsed": 20,
             "heapTotal": 30
         },
-        "nodeVersion": "v20.11.0",
+        "version": "0.2.22",
         "pid": 12345
     }
 }
@@ -459,9 +459,9 @@ data: [DONE]
 | `sessionsByStatus` | object | 按状态（idle、busy、error、destroyed）统计的会话数量 |
 | `uptime` | number | 守护进程运行时间（秒） |
 | `memory.rss` | number | 常驻内存大小（MB） |
-| `memory.heapUsed` | number | V8 已用堆内存（MB） |
-| `memory.heapTotal` | number | V8 总堆内存（MB） |
-| `nodeVersion` | string | Node.js 版本字符串 |
+| `memory.heapUsed` | number | 已用堆内存（MB，当前为近似值） |
+| `memory.heapTotal` | number | 总堆内存（MB，当前为近似值） |
+| `version` | string | 守护进程版本字符串 |
 | `pid` | number | 守护进程 PID |
 
 ---

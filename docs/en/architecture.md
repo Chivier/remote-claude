@@ -60,8 +60,8 @@ Codecast uses a two-tier architecture consisting of a **Head Node** (local orche
 │                  │  spawn subprocess                             │
 │                  ▼                                               │
 │   ┌─────────────────────────────────────┐                        │
-│   │  claude --print --output-format     │                        │
-│   │         stream-json [--resume ...]  │                        │
+│   │  Claude/Codex/Gemini/OpenCode      │                        │
+│   │  non-interactive stream-json CLI   │                        │
 │   └─────────────────────────────────────┘                        │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -76,7 +76,7 @@ A typical user interaction follows this path:
 4. For message forwarding, the **SessionRouter** resolves the active session for this channel.
 5. **SSHManager.ensure_tunnel()** establishes (or reuses) an SSH port-forwarding tunnel to the remote machine.
 6. **DaemonClient.send_message()** sends a `session.send` JSON-RPC request over the tunnel and returns an async SSE event iterator.
-7. The **Daemon** receives the request, selects a **CliAdapter** for the session's CLI type, and spawns a subprocess (e.g., `claude --print <message> --output-format stream-json --resume <sdkSessionId>`).
+7. The **Daemon** receives the request, selects a **CliAdapter** for the session's CLI type, and spawns a subprocess (for Claude, e.g. `claude -p <message> --output-format stream-json --resume <sdkSessionId>`).
 8. The CLI process writes JSON-lines to stdout. The daemon parses each line via `CliAdapter.parse_output_line()` and converts it to a **StreamEvent**.
 9. Each **StreamEvent** is serialized and sent back to the Head Node as an SSE `data:` frame.
 10. **BotEngine._forward_message()** handles each event: accumulating `partial` deltas for streaming display, forwarding `tool_use` notifications, and capturing the SDK session ID from the `result` event.
@@ -86,10 +86,10 @@ A typical user interaction follows this path:
 
 ### Per-Message Spawn
 
-The daemon spawns a fresh CLI process for each user message rather than keeping a long-running process with stdin open. The command pattern is:
+The daemon spawns a fresh CLI process for each user message rather than keeping a long-running process with stdin open. For Claude, the command pattern is:
 
 ```
-claude --print "user message" --output-format stream-json --verbose \
+claude -p "user message" --output-format stream-json --verbose \
        [--resume <sdkSessionId>] [--dangerously-skip-permissions]
 ```
 

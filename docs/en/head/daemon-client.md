@@ -84,7 +84,7 @@ Interrupts the current Claude operation for a session by sending SIGTERM to the 
 
 #### `health_check(local_port) -> dict`
 
-Checks daemon health. Returns session counts, uptime, memory usage, Node.js version, and PID.
+Checks daemon health. Returns session counts, uptime, memory usage, daemon version, and PID.
 
 #### `monitor_sessions(local_port) -> dict`
 

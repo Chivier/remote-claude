@@ -222,13 +222,15 @@ def format_health(machine_id: str, health: dict[str, Any]) -> str:
     memory = health.get("memory", {})
     mem_str = f"{memory.get('rss', '?')}MB RSS, {memory.get('heapUsed', '?')}/{memory.get('heapTotal', '?')}MB heap"
 
+    daemon_version = health.get("version", "?")
+
     lines = [
         f"**Daemon Health - {machine_id}**",
         f"Status: {'OK' if health.get('ok') else 'ERROR'}",
         f"Uptime: {uptime_str}",
         f"Sessions: {health.get('sessions', 0)} ({', '.join(status_parts)})",
         f"Memory: {mem_str}",
-        f"Node: {health.get('nodeVersion', '?')} (PID: {health.get('pid', '?')})",
+        f"Daemon: {daemon_version} (PID: {health.get('pid', '?')})",
     ]
     return "\n".join(lines)
 

@@ -55,9 +55,9 @@ Codecast 采用双层架构，由一个 **Head Node**（本地编排器）和一
 │                   │                                             │
 │                   ▼  每条消息生成一个进程                         │
 │            ┌─────────────┐                                      │
-│            │ claude      │                                      │
-│            │ --print     │                                      │
-│            │ --stream    │                                      │
+│            │  claude -p  │                                      │
+│            │ stream-json │                                      │
+│            │ [--resume]  │                                      │
 │            └─────────────┘                                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -70,7 +70,7 @@ Codecast 采用双层架构，由一个 **Head Node**（本地编排器）和一
 2. **Bot**（Discord 或 Telegram）接收消息，通过 **Bot Base** 命令分发器进行路由。
 3. 对于普通消息（非命令），Bot Base 在 **Session Router** 中查找映射到当前聊天频道的活跃会话。
 4. **Daemon Client** 通过 SSH 隧道以 JSON-RPC 方式将消息发送到远程 **Daemon**。
-5. **Daemon** 生成一个 `claude --print <message> --output-format stream-json` 进程。
+5. **Daemon** 根据会话的 CLI 类型选择对应的 **CliAdapter**，并生成一个子进程（对于 Claude，例如 `claude -p <message> --output-format stream-json --resume <sdkSessionId>`）。
 6. Claude CLI 处理消息并向 stdout 输出 JSON-lines 格式的内容。
 7. Daemon 将这些内容转换为 **StreamEvent** 对象，并以 **SSE（Server-Sent Events）** 方式回传。
 8. **Daemon Client** 将每个事件传递给 Bot Base，后者对内容进行格式化并将部分更新实时发送到聊天频道。
@@ -78,16 +78,16 @@ Codecast 采用双层架构，由一个 **Head Node**（本地编排器）和一
 
 ## 关键设计决策
 
-### 每消息生成进程（`claude --print`）
+### 每消息生成进程
 
 Codecast 不维护带有 stdin/stdout 的长期运行 Claude CLI 进程，而是为每条用户消息生成一个新进程：
 
 ```
-claude --print "user message" --output-format stream-json --verbose \
+claude -p "user message" --output-format stream-json --verbose \
        [--resume <sdkSessionId>] [--dangerously-skip-permissions]
 ```
 
-采用这一方式是因为 Claude CLI（v2.1.76 及以上）在不使用 `--print` 的情况下不支持 `--input-format stream-json`。`--resume` 标志通过传递前一次交互的 SDK 会话 ID 来保持对话连续性。每个进程只在一次消息交换期间存活。
+`--resume` 标志通过传递前一次交互的 SDK 会话 ID 来保持对话连续性。每个进程只在一次消息交换期间存活。
 
 **优势：**
 - 无需管理僵尸进程
@@ -137,7 +137,7 @@ Head Node 使用 SQLite（`sessions.db`）持久化聊天频道与远程 Claude 
 | **Session Router** | Python（sqlite3） | 频道到会话的映射、生命周期追踪（active/detached/destroyed） |
 | **SSH Manager** | Python（asyncssh） | 连接池、端口转发、通过 SCP 部署守护进程、技能同步 |
 | **Daemon Client** | Python（aiohttp） | JSON-RPC 调用、SSE 流解析、错误处理 |
-| **RPC Server** | TypeScript（Express） | JSON-RPC 的 HTTP 端点、SSE 流、健康检查 |
-| **Session Pool** | TypeScript | Claude CLI 生命周期、每消息生成进程、事件转换 |
-| **Message Queue** | TypeScript | 用户消息缓冲、SSH 重连的响应缓冲 |
-| **Skill Manager** | TypeScript | 将 CLAUDE.md 和技能目录同步到项目路径 |
+| **RPC Server** | Rust（Axum） | JSON-RPC 的 HTTP 端点、SSE 流、健康检查 |
+| **Session Pool** | Rust | Claude CLI 生命周期、每消息生成进程、事件转换 |
+| **Message Queue** | Rust | 用户消息缓冲、SSH 重连的响应缓冲 |
+| **Skill Manager** | Rust | 将 CLAUDE.md 和技能目录同步到项目路径 |

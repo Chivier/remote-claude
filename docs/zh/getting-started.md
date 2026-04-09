@@ -89,7 +89,7 @@ claude auth login
 验证命令行工具是否正常工作：
 
 ```bash
-claude --print "Hello" --output-format stream-json
+claude -p "Hello" --output-format stream-json
 ```
 
 ## 配置

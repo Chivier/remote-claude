@@ -172,7 +172,7 @@ Indicates the CLI has finished processing the message. Contains the SDK session 
 | `session_id` | string | SDK session ID for `--resume` on next message |
 | `raw` | object | Raw result including `duration_ms` and `usage` (optional) |
 
-The Head Node captures `session_id` and stores it via `router.update_sdk_session_id()` for future `--resume` calls.
+The Head Node captures `session_id` and stores it via `router.update_sdk_session()` for future `--resume` calls.
 
 This is a **terminal event**.
 

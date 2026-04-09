@@ -265,11 +265,11 @@ Each adapter below is **independent** and can be implemented in parallel after t
 
 ```bash
 # First message
-claude --print "message" --output-format stream-json --verbose --include-partial-messages \
+claude -p "message" --output-format stream-json --verbose --include-partial-messages \
   --dangerously-skip-permissions    # mode=auto
 
 # Resume
-claude --print "message" --output-format stream-json --verbose --include-partial-messages \
+claude -p "message" --output-format stream-json --verbose --include-partial-messages \
   --resume <sdk_session_id> --dangerously-skip-permissions
 ```
 
@@ -278,9 +278,9 @@ claude --print "message" --output-format stream-json --verbose --include-partial
 | Codecast Mode | Claude CLI Flags |
 |---|---|
 | `auto` | `--dangerously-skip-permissions` |
-| `code` | acceptEdits |
-| `plan` | read-only |
-| `ask` | confirm everything |
+| `code` | acceptEdits (handled by the surrounding workflow; no extra Claude CLI flag) |
+| `plan` | read-only (handled by the surrounding workflow; no extra Claude CLI flag) |
+| `ask` | confirm everything (default Claude CLI behavior) |
 
 #### Output Event Mapping
 

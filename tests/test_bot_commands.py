@@ -137,7 +137,7 @@ def mock_daemon():
             "uptime": 100,
             "sessionsByStatus": {},
             "memory": {},
-            "nodeVersion": "v18",
+            "version": "0.2.22",
             "pid": 1,
         }
     )
@@ -255,7 +255,7 @@ class TestCmdHealth:
                 "uptime": 100,
                 "sessionsByStatus": {},
                 "memory": {},
-                "nodeVersion": "v18",
+                "version": "0.2.22",
                 "pid": 1,
             }
 

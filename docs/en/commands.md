@@ -18,7 +18,7 @@ This page documents all commands available across the Discord, Telegram, and Lar
 | `/rm` | `<machine> <path>` | Destroy all sessions on a machine/path |
 | `/mode` | `<auto\|code\|plan\|ask>` | Switch permission mode |
 | `/model` | `<model_name>` | Switch the AI model for the current session |
-| `/tool-display` | `<timer\|append\|batch>` | Switch how tool calls are displayed |
+| `/tool-display` | `<timer\|append\|batch\|buffer>` | Switch how tool calls are displayed |
 | `/rename` | `<new_name>` | Rename the current session |
 | `/status` | *(none)* | Show current session info |
 | `/health` | `[machine]` | Check daemon health |
@@ -314,14 +314,15 @@ Switch how tool calls (file reads, shell commands, etc.) are displayed while the
 **Usage:**
 
 ```
-/tool-display <timer|append|batch>
+/tool-display <timer|append|batch|buffer>
 ```
 
 | Mode | Description |
 |---|---|
-| `timer` | Shows a "Working Xs" timer while the AI works. All results are sent together at the end. This is the default. |
+| `timer` | Shows a "Working Xs" timer while the AI works. All results are sent together at the end. |
 | `append` | Shows each tool call progressively as it happens. |
 | `batch` | Accumulates all tool calls and sends a single summary at the end. |
+| `buffer` | Shows a compact thinking status while the AI works and merges the final tool summary into the final result. This is the default. |
 
 **Example:**
 

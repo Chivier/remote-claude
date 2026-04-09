@@ -20,7 +20,7 @@ End-to-end tests that verify the full head↔daemon communication path using a r
 └─────────────────────────────────────────────┘
 ```
 
-The mock Claude CLI (`mock-claude.sh`) simulates `claude --print` behavior:
+The mock Claude CLI (`mock-claude.sh`) simulates Codecast's non-interactive Claude invocation:
 - Outputs valid `stream-json` format events
 - Supports special messages: `echo:<text>`, `error`, `slow`, `tools`
 
