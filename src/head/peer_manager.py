@@ -56,6 +56,17 @@ def _build_daemon_static(project_root: Path) -> None:
     if result.returncode != 0:
         raise RuntimeError(f"Daemon build failed: {result.stderr}")
 
+    # Copy built binary to ~/.codecast/daemon/ so installed (non-dev) mode can find it
+    if use_zigbuild:
+        built = project_root / "target" / musl_target / "release" / "codecast-daemon"
+    else:
+        built = project_root / "target" / "release" / "codecast-daemon"
+    if built.exists():
+        user_dir = Path.home() / ".codecast" / "daemon"
+        user_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(built), str(user_dir / "codecast-daemon"))
+        logger.info(f"Copied daemon binary to {user_dir / 'codecast-daemon'}")
+
 
 def resolve_daemon_binary() -> Path | None:
     """Resolve daemon binary path.
