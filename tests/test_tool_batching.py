@@ -19,6 +19,7 @@ from head.engine import BotEngine
 from head.platform.protocol import MessageHandle, InputHandler
 from head.config import Config, PeerConfig
 from head.session_router import SessionRouter
+from head.ssh_manager import TunnelResult
 from head.message_formatter import (
     compress_tool_messages,
     format_tool_use,
@@ -113,7 +114,7 @@ class MockBotEngine(BotEngine):
 @pytest.fixture
 def mock_ssh():
     ssh = AsyncMock()
-    ssh.ensure_tunnel = AsyncMock(return_value=19100)
+    ssh.ensure_tunnel = AsyncMock(return_value=TunnelResult(local_port=19100))
     ssh.get_local_port = MagicMock(return_value=None)
     ssh.sync_skills = AsyncMock()
     ssh.list_machines = AsyncMock(return_value=[])

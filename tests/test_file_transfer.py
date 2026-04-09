@@ -16,6 +16,7 @@ from head.config import Config, PeerConfig, FilePoolConfig
 from head.session_router import SessionRouter
 from head.daemon_client import DaemonClient
 from head.file_pool import FileEntry
+from head.ssh_manager import TunnelResult
 
 
 # ─── MockAdapter + MockBotEngine for testing ───
@@ -103,7 +104,7 @@ class MockBotEngine(BotEngine):
 @pytest.fixture
 def mock_ssh():
     ssh = AsyncMock()
-    ssh.ensure_tunnel = AsyncMock(return_value=19100)
+    ssh.ensure_tunnel = AsyncMock(return_value=TunnelResult(local_port=19100))
     ssh.upload_files = AsyncMock(return_value={})
     return ssh
 
