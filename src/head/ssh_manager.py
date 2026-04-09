@@ -22,6 +22,7 @@ from typing import Optional
 import asyncssh
 
 from .config import Config, PeerConfig
+from .peer_manager import _build_daemon_static
 
 logger = logging.getLogger(__name__)
 
@@ -478,17 +479,9 @@ class SSHManager:
         logger.info(f"Deploying daemon locally to {install_dir}")
 
         # Build Rust daemon if needed
-        if not self._rust_binary.exists():
-            logger.info("Building Rust daemon locally...")
-            project_root = Path(__file__).parent.parent
-            result = subprocess.run(
-                ["cargo", "build", "--release"],
-                cwd=str(project_root),
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                raise RuntimeError(f"Daemon build failed: {result.stderr}")
+        if not self._rust_binary or not self._rust_binary.exists():
+            _build_daemon_static(Path(__file__).parent.parent)
+            self._rust_binary = self._resolve_daemon_binary()
 
         # Create install directory and copy binary
         install_dir.mkdir(parents=True, exist_ok=True)
@@ -505,17 +498,9 @@ class SSHManager:
         logger.info(f"Deploying daemon to {machine_id}:{install_dir}")
 
         # Build Rust daemon locally first if needed
-        if not self._rust_binary.exists():
-            logger.info("Building Rust daemon locally...")
-            project_root = Path(__file__).parent.parent
-            result = subprocess.run(
-                ["cargo", "build", "--release"],
-                cwd=str(project_root),
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                raise RuntimeError(f"Daemon build failed: {result.stderr}")
+        if not self._rust_binary or not self._rust_binary.exists():
+            _build_daemon_static(Path(__file__).parent.parent)
+            self._rust_binary = self._resolve_daemon_binary()
 
         # Create remote directory
         await conn.run(f"mkdir -p {install_dir}")

@@ -3,6 +3,7 @@
 import logging
 import platform as _platform
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -17,20 +18,66 @@ logger = logging.getLogger(__name__)
 # ─── Daemon binary resolution ───
 
 
+def _linux_musl_target() -> str | None:
+    """Return the musl target triple for the current Linux machine, or None."""
+    if _platform.system().lower() != "linux":
+        return None
+    machine = _platform.machine().lower()
+    target_map = {
+        "x86_64": "x86_64-unknown-linux-musl",
+        "amd64": "x86_64-unknown-linux-musl",
+        "aarch64": "aarch64-unknown-linux-musl",
+        "arm64": "aarch64-unknown-linux-musl",
+    }
+    return target_map.get(machine)
+
+
+def _build_daemon_static(project_root: Path) -> None:
+    """Build the daemon as a static musl binary using cargo-zigbuild.
+
+    Falls back to plain ``cargo build`` when zigbuild or musl target is
+    unavailable (e.g. macOS, or tooling not installed).
+    """
+    musl_target = _linux_musl_target()
+    use_zigbuild = musl_target and shutil.which("cargo-zigbuild")
+
+    if use_zigbuild:
+        cmd = ["cargo", "zigbuild", "--release", "--target", musl_target]
+        logger.info(f"Building static daemon: {' '.join(cmd)}")
+    else:
+        cmd = ["cargo", "build", "--release"]
+        if musl_target and not use_zigbuild:
+            logger.warning(
+                "cargo-zigbuild not found — building with default (glibc) target. "
+                "Install with: uv tool install cargo-zigbuild ziglang"
+            )
+
+    result = subprocess.run(cmd, cwd=str(project_root), capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Daemon build failed: {result.stderr}")
+
+
 def resolve_daemon_binary() -> Path | None:
     """Resolve daemon binary path.
 
     Resolution order:
-    1. target/release/codecast-daemon (dev: local cargo build — only if inside a repo)
-    2. On PATH (codecast-daemon installed or symlinked)
-    3. ~/.codecast/daemon/codecast-daemon (user-installed binary)
-    4. head/bin/codecast-daemon-{platform} (CI-bundled in wheel)
+    1. target/<musl-target>/release/codecast-daemon (Linux musl static build)
+    2. target/release/codecast-daemon (dev: local cargo build — only if inside a repo)
+    3. On PATH (codecast-daemon installed or symlinked)
+    4. ~/.codecast/daemon/codecast-daemon (user-installed binary)
+    5. head/bin/codecast-daemon-{platform} (CI-bundled in wheel)
     Returns None if the daemon binary cannot be found.
     """
     # 1. Dev build (only when running from a source checkout with Cargo.toml)
     project_root = Path(__file__).parent.parent
     cargo_toml = project_root / "Cargo.toml"
     if cargo_toml.exists():
+        # Prefer musl static binary on Linux
+        musl_target = _linux_musl_target()
+        if musl_target:
+            musl_binary = project_root / "target" / musl_target / "release" / "codecast-daemon"
+            if musl_binary.exists():
+                return musl_binary
         dev_binary = project_root / "target" / "release" / "codecast-daemon"
         if dev_binary.exists():
             return dev_binary
