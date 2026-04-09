@@ -797,6 +797,20 @@ class DiscordAdapter:
         """Register all 17 Discord slash commands with autocomplete."""
         tree = self.bot.tree
 
+        # Enforce allowed_channels for slash commands (same as on_message)
+        _original_check = tree.interaction_check
+
+        async def _channel_check(interaction: discord.Interaction) -> bool:
+            if self._discord_config and self._discord_config.allowed_channels:
+                if interaction.channel_id not in self._discord_config.allowed_channels:
+                    await interaction.response.send_message(
+                        "This channel is not configured for Codecast.", ephemeral=True
+                    )
+                    return False
+            return await _original_check(interaction)
+
+        tree.interaction_check = _channel_check
+
         # ------------------------------------------------------------------ /start
         @tree.command(name="start", description="Start a new Claude session on a remote machine")
         @app_commands.describe(
