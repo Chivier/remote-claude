@@ -10,6 +10,7 @@ Uses asyncssh for async SSH operations and manages:
 """
 
 import asyncio
+import json as _json
 import logging
 import os
 import platform
@@ -25,6 +26,19 @@ from .config import Config, PeerConfig
 from .peer_manager import _build_daemon_static
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_health_response(raw: str) -> tuple[bool, str | None]:
+    """Parse a health.check JSON response, returning (is_healthy, version_or_none)."""
+    try:
+        data = _json.loads(raw)
+    except (ValueError, TypeError):
+        if '"ok":true' in raw or '"ok": true' in raw:
+            return True, None
+        return False, None
+    ok = data.get("ok", False)
+    version = data.get("version") if ok else None
+    return bool(ok), version
 
 
 class SSHTunnel:
