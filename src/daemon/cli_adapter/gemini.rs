@@ -208,7 +208,9 @@ impl CliAdapter for GeminiAdapter {
                         message: err_msg.to_string(),
                     }]
                 } else {
+                    // Clone via take+replace to avoid consuming the stored session_id
                     let sid = self.session_id.take();
+                    self.session_id.set(sid.clone());
                     vec![StreamEvent::Result {
                         session_id: sid,
                         raw: Some(msg),

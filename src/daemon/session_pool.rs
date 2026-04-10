@@ -448,14 +448,18 @@ async fn run_cli_process(
         let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
 
+        let mut found_sid = false;
         while let Ok(Some(line)) = lines.next_line().await {
-            // Try to extract session ID from each line
-            if let Some(extracted_sid) = adapter.extract_session_id(&line) {
-                let mut sessions_guard = sessions.lock().await;
-                if let Some(session) = sessions_guard.get_mut(session_id) {
-                    session.sdk_session_id = Some(extracted_sid.clone());
+            // Try to extract session ID from each line (only until first found)
+            if !found_sid {
+                if let Some(extracted_sid) = adapter.extract_session_id(&line) {
+                    let mut sessions_guard = sessions.lock().await;
+                    if let Some(session) = sessions_guard.get_mut(session_id) {
+                        session.sdk_session_id = Some(extracted_sid.clone());
+                    }
+                    info!("[Session {}] SDK session ID: {}", session_id, extracted_sid);
+                    found_sid = true;
                 }
-                info!("[Session {}] SDK session ID: {}", session_id, extracted_sid);
             }
 
             // Parse the line using the adapter
@@ -557,6 +561,8 @@ async fn run_cli_process(
                     send_sigterm_then_sigkill(child, 3000).await;
                 }
             }
+            // Clear the process handle after kill to avoid holding a stale handle
+            session.process.take();
         }
     }
 
@@ -653,9 +659,10 @@ async fn process_message_loop(
             while let Some(event) = buf_rx.recv().await {
                 let mut sessions_guard = sessions_for_buffer.lock().await;
                 if let Some(session) = sessions_guard.get_mut(&sid_for_buffer) {
-                    if !session.queue.is_client_connected() {
-                        session.queue.buffer_response(event, false);
-                    }
+                    // Always buffer: force=true ensures events are stored whether
+                    // client is connected or not (background queued messages have
+                    // no direct SSE channel to the client).
+                    session.queue.buffer_response(event, true);
                 }
             }
         });

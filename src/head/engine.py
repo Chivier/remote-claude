@@ -94,10 +94,6 @@ def resolve_session_path(raw_path: str, project_path: str) -> tuple[str, str | N
     return f"{project_path}/{raw_path}", None
 
 
-# Maximum buffer before forcing a message send
-STREAM_BUFFER_FLUSH_SIZE = 1800
-
-
 class BotEngine:
     """
     Platform-agnostic command engine. All command logic and streaming live here.
@@ -131,6 +127,9 @@ class BotEngine:
         self._stop_requested: set[str] = set()
         # Track which sessions have already shown the "Connected to" init message
         self._init_shown: set[str] = set()
+        # Pending interactive flow state (keyed by channel_id to avoid cross-channel races)
+        self._ssh_import_state: dict[str, Any] = {}  # channel_id -> {"entries": [...]}
+        self._remove_confirm_state: dict[str, Any] = {}  # channel_id -> {"machine": ..., "sessions": [...]}
 
     # ─── Adapter Wrappers ───
 
@@ -980,8 +979,6 @@ class BotEngine:
             if not effective_proxy and match.proxy_command:
                 # Try to extract the jump host from ProxyCommand
                 # Common patterns: "ssh ... jumphost -W %h:%p" or "sshpass ... ssh ... jumphost -W %h:%p"
-                import re
-
                 # Match the last word before -W (the jump host in ProxyCommand)
                 pc_match = re.search(r"ssh\s+(?:-\S+\s+)*(\S+)\s+-W", match.proxy_command)
                 if pc_match:
@@ -1076,21 +1073,19 @@ class BotEngine:
             )
             return
 
-        # Store the entries for later selection
-        self._ssh_import_entries = new_entries
-        self._ssh_import_channel = channel_id
+        # Store the entries for later selection (per-channel to avoid races)
+        self._ssh_import_state[channel_id] = {"entries": new_entries}
 
         display = format_ssh_hosts_for_display(new_entries)
         await self.send_message(channel_id, display)
 
     async def _handle_ssh_import_selection(self, channel_id: str, text: str) -> bool:
         """Handle user's response to SSH import listing."""
-        if not hasattr(self, "_ssh_import_entries") or not hasattr(self, "_ssh_import_channel"):
-            return False
-        if channel_id != self._ssh_import_channel:
+        state = self._ssh_import_state.get(channel_id)
+        if not state:
             return False
 
-        entries = self._ssh_import_entries
+        entries = state["entries"]
 
         # Parse selection (numbers separated by spaces)
         try:
@@ -1099,8 +1094,7 @@ class BotEngine:
             return False
 
         if not indices:
-            del self._ssh_import_entries
-            del self._ssh_import_channel
+            self._ssh_import_state.pop(channel_id, None)
             return False
 
         added: list[str] = []
@@ -1121,8 +1115,6 @@ class BotEngine:
             # Check proxy_jump first, then try to extract from ProxyCommand
             effective_proxy = entry.proxy_jump
             if not effective_proxy and entry.proxy_command:
-                import re
-
                 pc_match = re.search(r"ssh\s+(?:-\S+\s+)*(\S+)\s+-W", entry.proxy_command)
                 if pc_match:
                     effective_proxy = pc_match.group(1)
@@ -1155,8 +1147,7 @@ class BotEngine:
             added.append(f"**{entry.name}**{local_tag}")
 
         # Clean up state
-        del self._ssh_import_entries
-        del self._ssh_import_channel
+        self._ssh_import_state.pop(channel_id, None)
 
         result_parts: list[str] = []
         if added:
@@ -1197,9 +1188,10 @@ class BotEngine:
         active_sessions = [s for s in sessions if s.status in ("active", "detached")]
 
         if active_sessions:
-            self._remove_confirm_machine = machine_id
-            self._remove_confirm_channel = channel_id
-            self._remove_confirm_sessions = active_sessions
+            self._remove_confirm_state[channel_id] = {
+                "machine": machine_id,
+                "sessions": active_sessions,
+            }
 
             session_list = "\n".join(f"  - `{s.daemon_session_id}` ({s.status}) at `{s.path}`" for s in active_sessions)
             await self.send_message(
@@ -1215,19 +1207,15 @@ class BotEngine:
 
     async def _handle_remove_confirmation(self, channel_id: str, text: str) -> bool:
         """Handle user's confirmation for machine removal."""
-        if not hasattr(self, "_remove_confirm_machine") or not hasattr(self, "_remove_confirm_channel"):
-            return False
-        if channel_id != self._remove_confirm_channel:
+        state = self._remove_confirm_state.get(channel_id)
+        if not state:
             return False
 
-        machine_id = self._remove_confirm_machine
+        # Clean up state atomically before async operations
+        self._remove_confirm_state.pop(channel_id, None)
+        machine_id = state["machine"]
+        sessions = state["sessions"]
         answer = text.strip().lower()
-
-        # Clean up state
-        del self._remove_confirm_machine
-        del self._remove_confirm_channel
-        sessions = self._remove_confirm_sessions
-        del self._remove_confirm_sessions
 
         if answer in ("yes", "y"):
             for s in sessions:
@@ -1561,7 +1549,7 @@ After `/start` or `/resume`, send any message to interact with Claude."""
                     text = await self._upload_and_replace_files(session.machine_id, text, file_refs)
                 except Exception as e:
                     await self.send_message(channel_id, format_error(f"File upload failed: {e}"))
-                    return
+                    return  # No streaming started yet, finally cleanup is safe
 
             tool_display = session.tool_display  # "timer", "append", or "batch"
 
@@ -1643,7 +1631,8 @@ After `/start` or `/resume`, send any message to interact with Claude."""
                             channel_id,
                             f"Message queued (position: {position}). Claude is busy with a previous request.",
                         )
-                        return
+                        result_texts.clear()
+                        break
 
                     elif event_type == "error":
                         error_msg = event.get("message", "Unknown error")
@@ -1661,8 +1650,8 @@ After `/start` or `/resume`, send any message to interact with Claude."""
                 if timer_msg is not None:
                     try:
                         await self.edit_message(timer_msg, f"Done in {_format_elapsed()}")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to edit timer message to done: {e}")
 
                 if result_texts:
                     full_text = "\n\n".join(result_texts)
@@ -1764,7 +1753,8 @@ After `/start` or `/resume`, send any message to interact with Claude."""
                             channel_id,
                             f"Message queued (position: {position}). Claude is busy with a previous request.",
                         )
-                        return
+                        result_texts_buf.clear()
+                        break
 
                     elif event_type == "error":
                         error_msg = event.get("message", "Unknown error")
@@ -1785,8 +1775,8 @@ After `/start` or `/resume`, send any message to interact with Claude."""
                             _buffer_elapsed(), buffer_recent_tools, buffer_tool_count, done=True
                         )
                         await self.edit_message(buffer_msg, done_status)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to edit buffer status to done: {e}")
 
                 if result_texts_buf:
                     full_text = "\n\n".join(result_texts_buf)
@@ -1847,11 +1837,6 @@ After `/start` or `/resume`, send any message to interact with Claude."""
                             await self.send_message(channel_id, summary)
                         batch_lines = []
 
-                # Track last tool name for dedup (content_block_start emits
-                # bare tool name, then assistant emits name+input — skip the bare one
-                # if a detailed version arrives for the same tool).
-                last_pending_tool: Optional[str] = None
-
                 async for event in self.daemon.send_message(local_port, session.daemon_session_id, text):
                     if channel_id in self._stop_requested:
                         break
@@ -1872,13 +1857,9 @@ After `/start` or `/resume`, send any message to interact with Claude."""
                         thinking_buf = ""
 
                         if not has_detail:
-                            # Bare tool name from content_block_start — just remember it,
-                            # don't emit a line yet (the detailed version will follow).
-                            last_pending_tool = tool_name
+                            # Bare tool name from content_block_start — skip it,
+                            # the detailed version with input will follow.
                             continue
-
-                        # Detailed tool_use — clear the pending bare entry
-                        last_pending_tool = None
                         line = format_tool_line(event)
                         if tool_display == "batch":
                             batch_lines.append(line)
@@ -1933,7 +1914,7 @@ After `/start` or `/resume`, send any message to interact with Claude."""
                             channel_id,
                             f"Message queued (position: {position}). Claude is busy with a previous request.",
                         )
-                        return
+                        break
 
                     elif event_type == "error":
                         error_msg = event.get("message", "Unknown error")
@@ -1943,6 +1924,8 @@ After `/start` or `/resume`, send any message to interact with Claude."""
                 await finalize_activity()
                 await flush_batch()
 
+        except asyncio.CancelledError:
+            raise  # Don't swallow task cancellation
         except DaemonConnectionError as e:
             await self.send_message(
                 channel_id,

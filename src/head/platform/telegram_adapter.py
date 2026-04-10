@@ -96,6 +96,10 @@ class TelegramAdapter:
                     )
                 except Exception as e2:
                     logger.error(f"Failed to send Telegram message after retry: {e2}")
+                    try:
+                        last_msg = await self._bot.send_message(chat_id=chat_id, text=chunk)
+                    except Exception as e3:
+                        logger.error(f"Failed to send plain Telegram message: {e3}")
             except Exception:
                 try:
                     # Fallback: send without formatting
@@ -164,7 +168,13 @@ class TelegramAdapter:
         except RetryAfter as e:
             await asyncio.sleep(e.retry_after)
             try:
-                await self.edit_message(handle, text)
+                html_text = markdown_to_telegram_html(text)
+                await self._bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=html_text,
+                    parse_mode=ParseMode.HTML,
+                )
             except Exception:
                 pass
         except Exception:
@@ -443,9 +453,15 @@ class TelegramAdapter:
             self._stop_event.set()
         if self._app:
             logger.info("Stopping Telegram bot...")
-            # Cancel all typing tasks
-            for task in self._typing_tasks.values():
+            # Cancel and await all typing tasks
+            tasks = list(self._typing_tasks.values())
+            for task in tasks:
                 task.cancel()
+            for task in tasks:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
             self._typing_tasks.clear()
             if self._app.updater:
                 await self._app.updater.stop()

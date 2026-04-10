@@ -244,7 +244,9 @@ impl CliAdapter for CodexAdapter {
             }
 
             "turn.completed" => {
+                // Clone via take+replace to avoid consuming the stored thread_id
                 let tid = self.thread_id.take();
+                self.thread_id.set(tid.clone());
                 vec![StreamEvent::Result {
                     session_id: tid,
                     raw: Some(msg),

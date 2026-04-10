@@ -114,6 +114,8 @@ class LarkAdapter:
         self._ws_client: Any = None  # lark.ws.Client (WebSocket)
         self._on_input: Optional[InputHandler] = None
         self._stop_event: Optional[asyncio.Event] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._ws_task: Any = None
 
     @property
     def platform_name(self) -> str:
@@ -342,7 +344,7 @@ class LarkAdapter:
         return True
 
     def supports_inline_buttons(self) -> bool:
-        return True
+        return False
 
     def supports_file_upload(self) -> bool:
         return True
@@ -385,19 +387,26 @@ class LarkAdapter:
         )
 
         self._stop_event = asyncio.Event()
+        # Capture event loop for cross-thread callback use
+        self._loop = asyncio.get_running_loop()
 
         # Start WebSocket in a thread (lark-oapi WS client is synchronous)
-        loop = asyncio.get_running_loop()
-        self._ws_task = loop.run_in_executor(None, self._ws_client.start)
+        self._ws_task = self._loop.run_in_executor(None, self._ws_client.start)
 
         logger.info("Lark bot started")
         await self._stop_event.wait()
 
     async def stop(self) -> None:
-        """Stop the Lark bot."""
+        """Stop the Lark bot and clean up WS thread."""
         logger.info("Stopping Lark bot...")
         if self._stop_event:
             self._stop_event.set()
+        if self._ws_task:
+            self._ws_task.cancel()
+            try:
+                await self._ws_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
     # --- Internal Helpers ---
 
@@ -449,11 +458,10 @@ class LarkAdapter:
             attachments = self._extract_attachments(msg)
 
             # Dispatch to engine via the input handler
-            if self._on_input:
-                loop = asyncio.get_event_loop()
+            if self._on_input and self._loop:
                 asyncio.run_coroutine_threadsafe(
                     self._on_input(channel_id, text, sender_id, attachments or None),
-                    loop,
+                    self._loop,
                 )
         except Exception as e:
             logger.error(f"Error handling Lark message event: {e}")

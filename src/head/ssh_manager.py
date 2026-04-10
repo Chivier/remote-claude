@@ -63,12 +63,14 @@ class SSHTunnel:
         conn: Optional[asyncssh.SSHClientConnection],
         listener: Optional[asyncssh.SSHListener],
         is_localhost: bool = False,
+        jump_conn: Optional[asyncssh.SSHClientConnection] = None,
     ):
         self.machine_id = machine_id
         self.local_port = local_port
         self.conn = conn
         self.listener = listener
         self.is_localhost = is_localhost
+        self.jump_conn = jump_conn
 
     @property
     def alive(self) -> bool:
@@ -81,7 +83,7 @@ class SSHTunnel:
             return False
 
     async def close(self) -> None:
-        """Close the tunnel."""
+        """Close the tunnel and any jump host connection."""
         if self.is_localhost:
             return  # Nothing to close for localhost
         try:
@@ -90,6 +92,9 @@ class SSHTunnel:
             if self.conn and not self.conn.is_closed():  # type: ignore[union-attr]
                 self.conn.close()
                 await self.conn.wait_closed()
+            if self.jump_conn and not self.jump_conn.is_closed():  # type: ignore[union-attr]
+                self.jump_conn.close()
+                await self.jump_conn.wait_closed()
         except Exception as e:
             logger.warning(f"Error closing tunnel to {self.machine_id}: {e}")
 
@@ -121,9 +126,8 @@ class SSHManager:
             port = self._next_port
             self._next_port += 1
             try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.bind(("127.0.0.1", port))
-                s.close()
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(("127.0.0.1", port))
                 return port
             except OSError:
                 logger.debug(f"Port {port} in use, trying next")
@@ -240,8 +244,14 @@ class SSHManager:
                 return None
         return pw
 
-    async def _connect_ssh(self, machine: PeerConfig, timeout: float = 30.0) -> asyncssh.SSHClientConnection:
-        """Establish SSH connection to a machine with timeout."""
+    async def _connect_ssh(
+        self, machine: PeerConfig, timeout: float = 30.0
+    ) -> tuple[asyncssh.SSHClientConnection, Optional[asyncssh.SSHClientConnection]]:
+        """Establish SSH connection to a machine with timeout.
+
+        Returns (conn, jump_conn_or_none). Caller is responsible for closing
+        the jump_conn when done (unless it's stored in an SSHTunnel).
+        """
         connect_kwargs: dict = {
             "host": machine.host,
             "port": machine.port,
@@ -256,6 +266,7 @@ class SSHManager:
         if password:
             connect_kwargs["password"] = password
 
+        jump_conn: Optional[asyncssh.SSHClientConnection] = None
         if machine.proxy_jump:
             # Connect through jump host
             jump_machine = self._get_machine(machine.proxy_jump)
@@ -276,7 +287,7 @@ class SSHManager:
 
         logger.info(f"Connecting to {machine.id} ({machine.host}:{machine.port})...")
         conn = await asyncio.wait_for(asyncssh.connect(**connect_kwargs), timeout=timeout)
-        return conn
+        return conn, jump_conn
 
     async def ensure_tunnel(self, machine_id: str) -> TunnelResult:
         """
@@ -316,7 +327,7 @@ class SSHManager:
         local_port = self._alloc_port()
 
         # Establish SSH connection
-        conn = await self._connect_ssh(machine)
+        conn, jump_conn = await self._connect_ssh(machine)
 
         # Ensure daemon is running on remote (may upgrade if version mismatch)
         upgrade_info = await self._ensure_daemon(machine_id, conn)
@@ -339,7 +350,7 @@ class SSHManager:
             actual_remote_port,
         )
 
-        tunnel = SSHTunnel(machine_id, local_port, conn, listener)
+        tunnel = SSHTunnel(machine_id, local_port, conn, listener, jump_conn=jump_conn)
         self.tunnels[machine_id] = tunnel
 
         logger.info(f"Tunnel to {machine_id} ready on port {local_port}")
@@ -380,14 +391,14 @@ class SSHManager:
         stdout = result_ps.stdout.strip() if result_ps.stdout else ""
 
         if stdout:
-            pids = stdout.splitlines()[0]
-            logger.warning(f"Own daemon on {machine_id} (PID: {pids}) is unresponsive or outdated, sending SIGTERM...")
+            pids = " ".join(stdout.splitlines())  # Join all PIDs
+            logger.warning(f"Own daemon on {machine_id} (PIDs: {pids}) is unresponsive or outdated, sending SIGTERM...")
             await conn.run(f"kill {pids} 2>/dev/null || true")
             await asyncio.sleep(2)
 
             recheck = await conn.run(f"kill -0 {pids} 2>/dev/null && echo 'alive' || echo 'dead'")
             if "alive" in (recheck.stdout or ""):
-                logger.warning(f"Own daemon on {machine_id} (PID: {pids}) didn't stop, sending SIGKILL...")
+                logger.warning(f"Own daemon on {machine_id} (PIDs: {pids}) didn't stop, sending SIGKILL...")
                 await conn.run(f"kill -9 {pids} 2>/dev/null || true")
                 await asyncio.sleep(1)
 
@@ -585,10 +596,12 @@ class SSHManager:
             return
 
         # Get or create SSH connection
+        ad_hoc_conn = None
         if machine_id in self.tunnels and self.tunnels[machine_id].alive:
             conn = self.tunnels[machine_id].conn
         else:
-            conn = await self._connect_ssh(machine)
+            conn, _jc = await self._connect_ssh(machine)
+            ad_hoc_conn = conn  # Track for cleanup
 
         # SCP skills to remote
         try:
@@ -612,6 +625,9 @@ class SSHManager:
 
         except Exception as e:
             logger.warning(f"Skills sync failed for {machine_id}:{remote_path}: {e}")
+        finally:
+            if ad_hoc_conn:
+                ad_hoc_conn.close()
 
     async def list_machines(self) -> list[dict]:
         """List all configured machines with their online status.
@@ -801,13 +817,19 @@ class SSHManager:
             return stdout
 
         # Remote: reuse tunnel connection
+        ad_hoc_conn = None
         if machine_id in self.tunnels and self.tunnels[machine_id].alive:
             conn = self.tunnels[machine_id].conn
         else:
-            conn = await self._connect_ssh(machine)
+            conn, _jc = await self._connect_ssh(machine)
+            ad_hoc_conn = conn
 
-        result = await conn.run(cmd, check=True)
-        return result.stdout or ""
+        try:
+            result = await conn.run(cmd, check=True)
+            return result.stdout or ""
+        finally:
+            if ad_hoc_conn:
+                ad_hoc_conn.close()
 
     async def ensure_dir(self, machine_id: str, path: str) -> None:
         """Ensure a directory exists on the remote machine (mkdir -p)."""
@@ -828,14 +850,20 @@ class SSHManager:
                 logger.info(f"Directory {path} already exists locally, skipping clone")
                 return
         else:
+            ad_hoc_conn = None
             if machine_id in self.tunnels and self.tunnels[machine_id].alive:
                 conn = self.tunnels[machine_id].conn
             else:
-                conn = await self._connect_ssh(machine)
-            check = await conn.run(f"test -d {path} && echo 'exists' || echo 'missing'")
-            if "exists" in (check.stdout or ""):
-                logger.info(f"Directory {path} already exists on {machine_id}, skipping clone")
-                return
+                conn, _jc = await self._connect_ssh(machine)
+                ad_hoc_conn = conn
+            try:
+                check = await conn.run(f"test -d {path} && echo 'exists' || echo 'missing'")
+                if "exists" in (check.stdout or ""):
+                    logger.info(f"Directory {path} already exists on {machine_id}, skipping clone")
+                    return
+            finally:
+                if ad_hoc_conn:
+                    ad_hoc_conn.close()
 
         # Get parent directory for mkdir -p
         parent = str(Path(path).parent)

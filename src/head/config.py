@@ -276,7 +276,7 @@ def load_config(config_path: str = "config.yaml") -> Config:
 
     # Scalar settings
     cfg.default_mode = raw.get("default_mode", "auto")
-    cfg.tool_batch_size = int(raw.get("tool_batch_size", 15))
+    cfg.tool_batch_size = _safe_int(raw.get("tool_batch_size", 15), 15)
 
     # Skills
     skills_raw: dict[str, Any] = raw.get("skills", {})
@@ -559,15 +559,35 @@ def _parse_peer(peer_id: str, data: dict[str, Any]) -> PeerConfig:
         ssh_host=data.get("ssh_host"),
         ssh_user=data.get("ssh_user"),
         ssh_key=expand_path(data["ssh_key"]) if "ssh_key" in data else None,
-        ssh_port=data.get("ssh_port", 22),
+        ssh_port=_safe_int(data.get("ssh_port", 22), 22),
         proxy_jump=data.get("proxy_jump"),
         proxy_command=data.get("proxy_command"),
         password=data.get("password"),
-        daemon_port=data.get("daemon_port", 9100),
+        daemon_port=_safe_int(data.get("daemon_port", 9100), 9100),
         node_path=data.get("node_path"),
         project_path=data.get("project_path", "~/Projects"),
         default_paths=data.get("default_paths", []),
     )
+
+
+def _safe_int_list(values: list) -> list[int]:
+    """Convert a list of values to integers, skipping invalid entries."""
+    result = []
+    for v in values:
+        try:
+            result.append(int(v))
+        except (ValueError, TypeError):
+            logger.warning(f"Ignoring non-integer value in config list: {v!r}")
+    return result
+
+
+def _safe_int(value: Any, default: int) -> int:
+    """Convert a value to int with fallback to default."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid integer value {value!r}, using default {default}")
+        return default
 
 
 def _parse_bot(raw: dict[str, Any]) -> BotConfig:
@@ -578,18 +598,18 @@ def _parse_bot(raw: dict[str, Any]) -> BotConfig:
     if discord_raw:
         bot.discord = DiscordConfig(
             token=discord_raw.get("token", ""),
-            allowed_channels=[int(c) for c in discord_raw.get("allowed_channels", [])],
+            allowed_channels=_safe_int_list(discord_raw.get("allowed_channels", [])),
             command_prefix=discord_raw.get("command_prefix", "/"),
-            admin_users=[int(u) for u in discord_raw.get("admin_users", [])],
+            admin_users=_safe_int_list(discord_raw.get("admin_users", [])),
         )
 
     telegram_raw = raw.get("telegram")
     if telegram_raw:
         bot.telegram = TelegramConfig(
             token=telegram_raw.get("token", ""),
-            allowed_users=[int(u) for u in telegram_raw.get("allowed_users", [])],
-            admin_users=[int(u) for u in telegram_raw.get("admin_users", [])],
-            allowed_chats=[int(c) for c in telegram_raw.get("allowed_chats", [])],
+            allowed_users=_safe_int_list(telegram_raw.get("allowed_users", [])),
+            admin_users=_safe_int_list(telegram_raw.get("admin_users", [])),
+            allowed_chats=_safe_int_list(telegram_raw.get("allowed_chats", [])),
         )
 
     lark_raw = raw.get("lark")

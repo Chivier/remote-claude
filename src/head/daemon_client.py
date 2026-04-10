@@ -67,6 +67,10 @@ class DaemonClient:
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:
+                if resp.status >= 400:
+                    body = await resp.text()
+                    raise DaemonError(f"HTTP {resp.status}: {body[:200]}", resp.status)
+
                 data: dict[str, Any] = await resp.json()
 
                 if "error" in data and data["error"]:
@@ -154,8 +158,17 @@ class DaemonClient:
                     sock_read=idle_timeout,  # per-read timeout (idle detection)
                 ),
             ) as resp:
-                # Read SSE stream
+                if resp.status >= 400:
+                    body = await resp.text()
+                    yield {"type": "error", "message": f"HTTP {resp.status}: {body[:200]}"}
+                    return
+
+                # Read SSE stream (cap line size at 10MB to prevent OOM)
+                MAX_SSE_LINE = 10 * 1024 * 1024
                 async for line_bytes in resp.content:
+                    if len(line_bytes) > MAX_SSE_LINE:
+                        logger.warning(f"SSE line exceeds {MAX_SSE_LINE} bytes, skipping")
+                        continue
                     line = line_bytes.decode("utf-8").strip()
 
                     if not line:
@@ -171,7 +184,7 @@ class DaemonClient:
                             event = json.loads(data_str)
                             yield event
                         except json.JSONDecodeError:
-                            logger.warning(f"Failed to parse SSE data: {data_str}")
+                            logger.warning(f"Failed to parse SSE data: {data_str[:200]}")
                             continue
 
         except asyncio.TimeoutError:
@@ -285,6 +298,12 @@ class DaemonClient:
         """Close the HTTP session."""
         if self._session and not self._session.closed:
             await self._session.close()
+
+    async def __aenter__(self) -> "DaemonClient":
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        await self.close()
 
 
 class DaemonError(Exception):

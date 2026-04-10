@@ -205,7 +205,7 @@ async fn handle_send_message(state: Arc<AppState>, req: &RpcRequest) -> axum::re
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
             loop {
                 interval.tick().await;
-                let ping_data = serde_json::to_string(&json!({"type": "ping"})).unwrap();
+                let ping_data = serde_json::to_string(&json!({"type": "ping"})).unwrap_or_default();
                 if sse_tx_for_ping
                     .send(Ok(Event::default().data(ping_data)))
                     .await
@@ -271,6 +271,9 @@ where
     response
         .headers_mut()
         .insert("Cache-Control", HeaderValue::from_static("no-cache"));
+    response
+        .headers_mut()
+        .insert("Connection", HeaderValue::from_static("keep-alive"));
     response
 }
 

@@ -224,7 +224,7 @@ class TestLarkAdapterBasic:
 
     def test_supports_inline_buttons(self):
         adapter = _make_adapter()
-        assert adapter.supports_inline_buttons() is True
+        assert adapter.supports_inline_buttons() is False
 
     def test_supports_file_upload(self):
         adapter = _make_adapter()
@@ -315,12 +315,11 @@ class TestLarkEventHandling:
         handler.assert_not_called()
 
     @patch("head.platform.lark_adapter.asyncio.run_coroutine_threadsafe")
-    @patch("head.platform.lark_adapter.asyncio.get_event_loop")
-    def test_dispatches_to_handler(self, mock_get_loop, mock_run_coro):
+    def test_dispatches_to_handler(self, mock_run_coro):
         mock_loop = MagicMock()
-        mock_get_loop.return_value = mock_loop
 
         adapter = _make_adapter()
+        adapter._loop = mock_loop  # Simulate loop captured during start()
         handler = MagicMock()
         adapter.set_input_handler(handler)
 
@@ -337,12 +336,11 @@ class TestLarkEventHandling:
         assert call_args[0][1] is mock_loop
 
     @patch("head.platform.lark_adapter.asyncio.run_coroutine_threadsafe")
-    @patch("head.platform.lark_adapter.asyncio.get_event_loop")
-    def test_extracts_sender_id(self, mock_get_loop, mock_run_coro):
+    def test_extracts_sender_id(self, mock_run_coro):
         mock_loop = MagicMock()
-        mock_get_loop.return_value = mock_loop
 
         adapter = _make_adapter()
+        adapter._loop = mock_loop  # Simulate loop captured during start()
         handler = MagicMock()
         adapter.set_input_handler(handler)
 

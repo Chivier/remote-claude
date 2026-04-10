@@ -43,8 +43,8 @@ logger = logging.getLogger(__name__)
 
 # Heartbeat interval for "Thinking Xs" updates (seconds)
 HEARTBEAT_INTERVAL = 30
-# Max buffer before flushing to a new message
-STREAM_BUFFER_FLUSH_SIZE = 1800
+# Maximum typing indicator duration (seconds) — safety net against leaked tasks
+TYPING_MAX_DURATION = 86400  # 24 hours
 
 
 class _AskUserQuestionView(discord.ui.View):
@@ -149,12 +149,10 @@ class DiscordAdapter:
         self._channels: dict[str, discord.abc.Messageable] = {}
         # channel_id -> active typing task
         self._typing_tasks: dict[str, asyncio.Task] = {}
-        # channel_id -> heartbeat status message
-        self._heartbeat_msgs: dict[str, discord.Message] = {}
+        # channel_id -> heartbeat status MessageHandle
+        self._heartbeat_msgs: dict[str, MessageHandle] = {}
         # channel_id -> pending deferred interaction (first send_message consumes it)
         self._deferred_interactions: dict[str, discord.Interaction] = {}
-        # session daemon IDs that have already shown the "Connected to" init message
-        self._init_shown: set[str] = set()
         # channels currently streaming (prevent concurrent forwarding)
         self._streaming: set[str] = set()
 
@@ -247,9 +245,14 @@ class DiscordAdapter:
             )
 
         chunks = split_message(text, max_len=2000)
+        if not chunks:
+            return MessageHandle(platform="discord", channel_id=channel_id, message_id="0")
         last_msg = None
 
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks):
+            # Rate-limit: small delay between chunks to avoid Discord 429s
+            if i > 0:
+                await asyncio.sleep(0.3)
             try:
                 last_msg = await channel.send(chunk)
             except discord.HTTPException as e:
@@ -329,10 +332,10 @@ class DiscordAdapter:
                 channel = self._channels.get(handle.channel_id)
                 if channel:
                     await channel.send(text[:2000])
-            except Exception:
-                pass
+            except Exception as e2:
+                logger.debug(f"Failed to send fallback message: {e2}")
         except discord.NotFound:
-            pass
+            logger.debug(f"Message already deleted, cannot edit: {handle.message_id}")
 
     async def delete_message(self, handle: MessageHandle) -> None:
         """Delete an existing Discord message."""
@@ -420,8 +423,14 @@ class DiscordAdapter:
     async def stop(self) -> None:
         """Disconnect from Discord and clean up."""
         logger.info("Stopping Discord adapter...")
-        for task in self._typing_tasks.values():
+        tasks = list(self._typing_tasks.values())
+        for task in tasks:
             task.cancel()
+        for task in tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         self._typing_tasks.clear()
         await self.bot.close()
 
@@ -581,9 +590,11 @@ class DiscordAdapter:
 
         async def typing_loop() -> None:
             try:
-                while True:
+                deadline = asyncio.get_event_loop().time() + TYPING_MAX_DURATION
+                while asyncio.get_event_loop().time() < deadline:
                     await channel.typing()
                     await asyncio.sleep(8)  # Discord typing indicator lasts ~10s
+                logger.warning(f"Typing indicator for {channel_id} hit {TYPING_MAX_DURATION}s limit")
             except asyncio.CancelledError:
                 pass
             except Exception as e:
@@ -729,8 +740,8 @@ class DiscordAdapter:
                     if model and event.get("subtype") == "init":
                         current_session = engine.router.resolve(channel_id)
                         daemon_sid = current_session.daemon_session_id if current_session else ""
-                        if daemon_sid not in self._init_shown:
-                            self._init_shown.add(daemon_sid)
+                        if daemon_sid not in engine._init_shown:
+                            engine._init_shown.add(daemon_sid)
                             mode_str = display_mode(current_session.mode) if current_session else "unknown"
                             await self.send_message(
                                 channel_id,
@@ -759,8 +770,8 @@ class DiscordAdapter:
             if thinking_ref:
                 try:
                     await self.edit_message(thinking_ref, f"Done in {time_str}")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Failed to edit thinking message to done: {e}")
 
             # Send all accumulated text as one concatenated message
             if result_texts:

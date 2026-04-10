@@ -24,6 +24,9 @@ use server::AppState;
 use session_pool::SessionPool;
 use skill_manager::SkillManager;
 
+/// Maximum number of ports to try beyond the configured port before giving up.
+const PORT_SCAN_RANGE: u16 = 100;
+
 #[tokio::main]
 async fn main() {
     // Handle --version before anything else
@@ -74,7 +77,7 @@ async fn main() {
 
     let app = server::build_router(state.clone());
 
-    // Try binding to port, incrementing on collision (up to port+100)
+    // Try binding to port, incrementing on collision (up to port + PORT_SCAN_RANGE)
     let mut actual_port = port;
     let listener = loop {
         let addr: SocketAddr = format!("{}:{}", host, actual_port).parse().unwrap();
@@ -88,8 +91,12 @@ async fn main() {
                     actual_port + 1
                 );
                 actual_port += 1;
-                if actual_port > port + 100 {
-                    error!("No available port in range {}..{}", port, port + 100);
+                if actual_port > port + PORT_SCAN_RANGE {
+                    error!(
+                        "No available port in range {}..{}",
+                        port,
+                        port + PORT_SCAN_RANGE
+                    );
                     std::process::exit(1);
                 }
             }
